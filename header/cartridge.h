@@ -18,8 +18,8 @@ private:
 public:
 
 	cartridge(std::vector<u8>& raw);
-	cartridge(const cartridge& to_copy);
-	cartridge(const cartridge&& to_move) noexcept;
+	cartridge(const cartridge& to_copy) = delete;
+	cartridge(const cartridge&& to_move) noexcept = delete;
 
 	const std::vector<u8>& prg_ref() const;
 

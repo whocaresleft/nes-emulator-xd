@@ -1,4 +1,4 @@
-#include "cpu.h"
+#include "../header/cpu.h"
 
 cpu::cpu() :
 
@@ -13,45 +13,12 @@ cpu::cpu() :
 	p(0x00_u8 | F_INTERRUPT_DISABLE | F_GHOST),
 	cycles(7_usize),
 	halted(false),
+	paused(true),
 
 	cpu_bus()
 {
 	//this->pc = this->read_u16(0xFFFC);
 }
-
-cpu::cpu(cpu& to_copy) :
-
-	opcode(to_copy.opcode),
-	decoded(to_copy.decoded),
-
-	pc(to_copy.pc),
-	sp(to_copy.sp),
-	a(to_copy.a),
-	x(to_copy.x),
-	y(to_copy.y),
-	p(to_copy.p),
-	cycles(to_copy.cycles),
-	halted(to_copy.halted),
-
-	cpu_bus(bus{to_copy.cpu_bus})
-{ }
-
-cpu::cpu(cpu&& to_move) noexcept :
-
-	opcode(to_move.opcode),
-	decoded(std::move(to_move.decoded)),
-
-	pc(to_move.pc),
-	sp(to_move.sp),
-	a(to_move.a),
-	x(to_move.x),
-	y(to_move.y),
-	p(to_move.p),
-	cycles(to_move.cycles),
-	halted(to_move.halted),
-
-	cpu_bus(std::move(to_move.cpu_bus))
-{ }
 
 cpu::~cpu() { this->cpu_bus.~bus(); }
 
@@ -127,7 +94,7 @@ std::pair<u16, bool> cpu::get_zero_page_y_address(u16 address) const {
 	};
 }
 
-#include "instruction.h"
+#include "../header/instruction.h"
 void cpu::arr (const addressing_mode mode) {
 	u16 address((this->*mode.get_address)(this->pc).first);
 	u8 value(this->read_u8(address));
@@ -149,7 +116,9 @@ void cpu::txa (const addressing_mode mode) {
 	this->set_a(this->x);
 }
 void cpu::stp (const addressing_mode mode) {
-	this->halted = true;
+	halted.store(true);
+	cv.notify_all();
+	if (runner.joinable()) runner.request_stop();
 }
 void cpu::tya (const addressing_mode mode) {
 	this->set_a(this->y);
@@ -629,8 +598,10 @@ void cpu::compare(const addressing_mode mode, const u8 compare_with) {
 	if (addr_page_cross.second) this->tick(1);
 }
 
+#include <iostream>
 void cpu::fetch() {
 	this->opcode = this->read_u8(this->pc++);
+	std::cout << std::hex << "Fetched " << static_cast<int>(this->opcode) << " at " << static_cast<int>(this->pc - 1) << std::dec << std::endl;
 }
 
 void cpu::decode() {
@@ -653,7 +624,6 @@ void cpu::execute() {
 }
 #include <string>
 #include <sstream>
-#include <iostream>
 #include <iomanip>
 std::string cpu::trace() const {
 
@@ -785,7 +755,7 @@ void cpu::reset() {
 	this->p = 0x00_u8 | F_INTERRUPT_DISABLE | F_GHOST;
 	this->cycles = 7_usize;
 	this->halted = false;
-
+	this->paused = true;
 	//this->pc = this->read_u16(0xFFFC_u16);
 	this->pc = 0xC000;
 }

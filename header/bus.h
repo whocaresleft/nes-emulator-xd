@@ -13,8 +13,8 @@ private:
 
 public:
 	bus();
-	bus(bus& to_copy);
-	bus(bus&& to_move) noexcept;
+	bus(bus& to_copy) = delete;
+	bus(bus&& to_move) noexcept = delete;
 	~bus();
 
 	void load(cartridge* rom);

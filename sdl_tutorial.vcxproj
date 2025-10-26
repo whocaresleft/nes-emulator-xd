@@ -19,24 +19,39 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="bus.h" />
-    <ClInclude Include="cartridge.h" />
-    <ClInclude Include="cpu.h" />
-    <ClInclude Include="definitions.h" />
-    <ClInclude Include="instruction.h" />
-    <ClInclude Include="memory.h" />
+    <ClCompile Include="source\bus.cpp" />
+    <ClCompile Include="source\cartridge.cpp" />
+    <ClCompile Include="source\cpu.cpp" />
+    <ClCompile Include="source\main.cpp" />
+    <ClCompile Include="third_party\imgui\backends\imgui_impl_opengl3.cpp" />
+    <ClCompile Include="third_party\imgui\backends\imgui_impl_sdl2.cpp" />
+    <ClCompile Include="third_party\imgui\imgui.cpp" />
+    <ClCompile Include="third_party\imgui\imgui_demo.cpp" />
+    <ClCompile Include="third_party\imgui\imgui_draw.cpp" />
+    <ClCompile Include="third_party\imgui\imgui_tables.cpp" />
+    <ClCompile Include="third_party\imgui\imgui_widgets.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="bus.cpp" />
-    <ClCompile Include="cartridge.cpp" />
-    <ClCompile Include="cpu.cpp" />
-    <ClCompile Include="main.cpp" />
+    <Text Include="resource\nestest.log" />
+    <Text Include="resource\nestest.txt" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="nestest.nes" />
-  </ItemGroup>
-  <ItemGroup>
-    <Text Include="nestest.log" />
+    <ClInclude Include="header\bus.h" />
+    <ClInclude Include="header\cartridge.h" />
+    <ClInclude Include="header\cpu.h" />
+    <ClInclude Include="header\definitions.h" />
+    <ClInclude Include="header\instruction.h" />
+    <ClInclude Include="header\memory.h" />
+    <ClInclude Include="header\utility.h" />
+    <ClInclude Include="third_party\imgui\backends\imgui_impl_opengl3.h" />
+    <ClInclude Include="third_party\imgui\backends\imgui_impl_opengl3_loader.h" />
+    <ClInclude Include="third_party\imgui\backends\imgui_impl_sdl2.h" />
+    <ClInclude Include="third_party\imgui\imconfig.h" />
+    <ClInclude Include="third_party\imgui\imgui.h" />
+    <ClInclude Include="third_party\imgui\imgui_internal.h" />
+    <ClInclude Include="third_party\imgui\imstb_rectpack.h" />
+    <ClInclude Include="third_party\imgui\imstb_textedit.h" />
+    <ClInclude Include="third_party\imgui\imstb_truetype.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
@@ -142,7 +157,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>SDL2.lib;SDL2main.lib;SDL2_image.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SDL2.lib;SDL2main.lib;SDL2_image.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -160,7 +175,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>SDL2.lib;SDL2main.lib;SDL2_image.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SDL2.lib;SDL2main.lib;SDL2_image.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

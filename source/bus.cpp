@@ -1,18 +1,9 @@
-#include "bus.h"
+#include "../header/bus.h"
 
 bus::bus() :
 	cpu_vram({}),
 	rom(nullptr)
 {}
-
-bus::bus(bus& to_copy) :
-	cpu_vram({to_copy.cpu_vram}),
-	rom(to_copy.rom)
-{ }
-bus::bus(bus&& to_move) noexcept :
-	cpu_vram(std::move(to_move.cpu_vram)),
-	rom(to_move.rom)
-{ }
 
 bus::~bus() {}
 

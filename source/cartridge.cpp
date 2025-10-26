@@ -1,9 +1,7 @@
-#include "cartridge.h"
+#include "../header/cartridge.h"
 #include <span>
 #include <ranges>
 #include <algorithm>
-
-#include <iostream>
 
 cartridge::cartridge(std::vector<u8>& raw) :
 	mapper(0),
@@ -45,19 +43,6 @@ cartridge::cartridge(std::vector<u8>& raw) :
 	this->screen_mirroring = screen_mirroring;
 	//std::cout << ": [ prg:" << prg_rom.size() << " - chr:" << chr_rom.size() << " - mapper:" << static_cast<uint32_t>(mapper) << " - mirroring:" << static_cast<int>(screen_mirroring) << " ]" << std::endl;
 }
-
-cartridge::cartridge(const cartridge& to_copy) :
-	prg_rom({to_copy.prg_rom}),
-	chr_rom({to_copy.chr_rom}),
-	mapper(to_copy.mapper),
-	screen_mirroring(to_copy.screen_mirroring)
-{}
-cartridge::cartridge(const cartridge&& to_move) noexcept : 
-	prg_rom(to_move.prg_rom),
-	chr_rom(to_move.chr_rom),
-	mapper(to_move.mapper),
-	screen_mirroring(to_move.screen_mirroring)
-{}
 
 const std::vector<u8>& cartridge::prg_ref() const {
 	return this->prg_rom;

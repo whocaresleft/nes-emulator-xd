@@ -4,6 +4,14 @@
 #include "bus.h"
 #include <string>
 
+#include <iostream>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
+#include <atomic>
+#include <future>
+#include <stop_token>
+
 struct instruction;
 struct addressing_mode;
 
@@ -23,15 +31,23 @@ private:
 	constexpr static u8 F_OVERFLOW				= 0b01000000;
 	constexpr static u8 F_NEGATIVE				= 0b10000000;
 
+public:
 	u8 a, p, sp, x, y;
 	u16 pc;
 
 	u8 opcode;
 
 	usize cycles;
-	bool halted;
+
+	std::atomic<bool> halted;
+	std::atomic<bool> paused;
 
 	const instruction* decoded;
+private:
+
+	std::mutex mtx;
+	std::condition_variable cv;
+	std::jthread runner;
 
 	bus cpu_bus;
 
@@ -60,6 +76,7 @@ private:
 
 	void update_negative_zero(const u8 value);
 public:
+	
 	std::pair<u16, bool> get_absolute_address(const u16 address) const;
 	std::pair<u16, bool> get_absolute_x_address(const u16 address) const;
 	std::pair<u16, bool> get_absolute_y_address(const u16 address) const;
@@ -153,8 +170,8 @@ public:
 	void xaa(const addressing_mode mode);
 
 	cpu();
-	cpu(cpu& to_copy);
-	cpu(cpu&& to_move) noexcept;
+	cpu(cpu& to_copy) = delete;
+	cpu(cpu&& to_move) noexcept = delete;
 
 	void load(cartridge* rom);
 	void reset();
@@ -194,6 +211,54 @@ public:
 
 			last(*this);
 		}
+	}
+
+	void run_async() {
+		this->run_async(
+			[](cpu&) {},
+			[](cpu&) {}
+		);
+	}
+	template <typename F, typename L>
+	void run_async(F&& first, L&& last) {
+		if (halted.load()) return;
+		this->paused.store(false);
+
+		runner = std::jthread([this, first, last](std::stop_token st) {
+
+			while (!st.stop_requested()) {
+				{
+					std::unique_lock<std::mutex> lock(mtx);
+					cv.wait(
+						lock, [this, &st] {
+							return st.stop_requested() || (!paused && !halted);
+						}
+					);
+				}
+				if (st.stop_requested()) break;
+				
+				first(*this);
+				this->fetch();
+				this->decode();
+				this->execute();
+				last(*this);
+
+				if (halted.load()) break;
+				//std::this_thread::sleep_for(std::chrono::seconds(1));
+			}
+		});
+	}
+	void pause() {
+		if (halted.load()) return;
+		paused.store(true);
+	}
+	void resume() {
+		if (!paused.load() || halted.load()) return;
+		{
+			std::lock_guard<std::mutex> lock(mtx);
+			paused.store(false);
+		}
+		cv.notify_one();
 	}
 
 	std::string trace() const;
