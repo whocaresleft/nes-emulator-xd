@@ -10,14 +10,28 @@
 #include <cstdio>
 #include "../header/utility.h"
 #include "../header/cpu.h"
+#include <cmath>
+#include <span>
 
 typedef struct _gui_context {
+
 	struct _cpu {
 		bool has_started;
 		float last_freq;
 		bool hide;
 		bool register_view;
 		bool instruction_view;
+		bool stack_view;
+		struct _ram {
+			bool show;
+			int start;
+			int end;
+			bool mirrored;
+			std::span<u8> view;
+			constexpr static u16 MIN = 0x0000_u16;
+			constexpr static u16 MAX = 0x07FF_u16;
+			constexpr static u16 MAX_MIRRORED = 0x1FFF_u16;
+		} memory;
 		struct registers {
 			u8 a, x, y, sp, p;
 			u16 pc;
@@ -30,9 +44,23 @@ typedef struct _gui_context {
 			int operands[2];
 		} opcode;
 	} cpu;
-	bool show_rom;
-	bool show_vram;
 } _gui_context;
+_gui_context* default_ctx() {
+	
+	_gui_context* ctx = new _gui_context();
+
+	ctx->cpu.has_started = false;
+	ctx->cpu.last_freq = .0f;
+	ctx->cpu.hide = true;
+	ctx->cpu.register_view = false;
+	ctx->cpu.instruction_view = false;
+	ctx->cpu.reg = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x0000 };
+	ctx->cpu.opcode = { false, false, nullptr, {0x00, 0x00} };
+	ctx->cpu.memory = { false, 0x0000_u16, 0x000F_u16, false };
+	ctx->cpu.stack_view = false;
+
+	return ctx;
+}
 
 struct _gui_context;
 void cpu_window(_gui_context::_cpu*, cpu*);
@@ -43,11 +71,7 @@ void gui_execute(_gui_context::_cpu*, cpu*);
 
 int main(int argc, char* argv[]) {
 
-	_gui_context ctx = { 
-		{false, 0.0f,  true, false, false,{0,0,0,0,0,0}, { false, false, nullptr, { 0x00, 0x00 } }},
-		false, 
-		false,
-	};
+	_gui_context* ctx = default_ctx();
 
 	// SDL Context
 #ifdef _WIN32
@@ -119,6 +143,7 @@ int main(int argc, char* argv[]) {
 
 	cpu* CPU = new cpu();
 	CPU->load(&c);
+	ctx->cpu.memory.view = CPU->get_wram_chunk(ctx->cpu.memory.start, ctx->cpu.memory.end);
 
 	while (!done) {
 
@@ -157,14 +182,17 @@ int main(int argc, char* argv[]) {
 			if (ImGui::BeginMainMenuBar()) {
 
 				if (ImGui::BeginMenu("CPU")) {
-					if (ImGui::MenuItem(ctx.cpu.hide ? "Show" : "Hide")) {
-						ctx.cpu.hide = !ctx.cpu.hide;
-						ctx.cpu.register_view &= !(ctx.cpu.hide);
-						ctx.cpu.instruction_view &= !(ctx.cpu.hide);
+					if (ImGui::MenuItem(ctx->cpu.hide ? "Show" : "Hide")) {
+						ctx->cpu.hide = !ctx->cpu.hide;
+						ctx->cpu.register_view &= !(ctx->cpu.hide);
+						ctx->cpu.instruction_view &= !(ctx->cpu.hide);
+						ctx->cpu.memory.show &= !(ctx->cpu.hide);
 					}
 					ImGui::Separator();
-					ImGui::MenuItem("Registers view", nullptr, &ctx.cpu.register_view, !ctx.cpu.hide);
-					ImGui::MenuItem("Instruction view", nullptr, &ctx.cpu.instruction_view, !ctx.cpu.hide);
+					ImGui::MenuItem("Registers view", nullptr, &ctx->cpu.register_view, !ctx->cpu.hide);
+					ImGui::MenuItem("Instruction view", nullptr, &ctx->cpu.instruction_view, !ctx->cpu.hide);
+					ImGui::Separator();
+					ImGui::MenuItem("RAM view", nullptr, &ctx->cpu.memory.show, !ctx->cpu.hide);
 					ImGui::EndMenu();
 				}
 
@@ -187,8 +215,8 @@ int main(int argc, char* argv[]) {
 				ImGui::EndMainMenuBar();
 			}
 
-			if (!ctx.cpu.hide) {
-				cpu_window(&(ctx.cpu), CPU);
+			if (!ctx->cpu.hide) {
+				cpu_window(&(ctx->cpu), CPU);
 			}
 		}
 
@@ -203,6 +231,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	// Cleanup
+	delete ctx;
 	delete CPU;
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplSDL2_Shutdown();
@@ -218,16 +247,17 @@ int main(int argc, char* argv[]) {
 
 void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 
+	float height = 85.f + (ctx->register_view ? 110.f : 0.f) + (ctx->instruction_view ? 90.f : 0.f) + (ctx->stack_view ? 20.f : 0.f);
+	ImGui::SetNextWindowSize(ImVec2(435.f, height));
 	if (!ImGui::Begin("CPU", nullptr, ImGuiWindowFlags_NoResize)) {
 		ImGui::End();
 		return;
 	}
-
 	ImGui::SeparatorText("CPU Status");
 	if (CPU->halted.load()) {
 		ImGui::Text("Halted");
 		ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine();
-		ImGui::PlotLines("CPU Frequency", {0}, 1, 0, nullptr, -1.f, 1.f, ImVec2(100.f, 20.f));
+		ImGui::PlotLines("CPU Frequency", { 0 }, 1, 0, nullptr, -1.f, 1.f, ImVec2(100.f, 20.f));
 		ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine();
 		if (ImGui::Button("Reset")) {
 			CPU->reset();
@@ -252,17 +282,22 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 					CPU->run_async(
 						[](cpu&) {},
 						[ctx](cpu& cpu) {
-							ctx->reg.a = cpu.a;
-							ctx->reg.x = cpu.x;
-							ctx->reg.y = cpu.y;
-							ctx->reg.p = cpu.p;
-							ctx->reg.sp = cpu.sp;
 							ctx->reg.pc = cpu.pc;
-							ctx->opcode.instr = &INSTRUCTIONS[cpu.opcode];
-							{
+							if (ctx->register_view) {
+								ctx->reg.a = cpu.a;
+								ctx->reg.x = cpu.x;
+								ctx->reg.y = cpu.y;
+								ctx->reg.p = cpu.p;
+								ctx->reg.sp = cpu.sp;
+							}
+							if (ctx->instruction_view) {
+								ctx->opcode.instr = &INSTRUCTIONS[cpu.opcode];
 								usize len = ADDRESSING_MODES[ctx->opcode.instr->mode].length;
 								if (len > 1) ctx->opcode.operands[0] = cpu.read_u8(cpu.pc + 1);
 								if (len > 2) ctx->opcode.operands[1] = cpu.read_u8(cpu.pc + 2);
+							}
+							if (ctx->memory.show) {
+								ctx->memory.view = cpu.get_wram_chunk(ctx->memory.start, ctx->memory.end);
 							}
 						}
 					);
@@ -346,7 +381,7 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 		}
 		ImGui::EndChild();
 
-		if (ImGui::TreeNode("Stack Content")) {
+		if (ctx->stack_view = ImGui::TreeNode("Stack Content")) {
 			ImGui::Text("");
 			ImGui::TreePop();
 		}
@@ -366,7 +401,7 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 		ImGui::BeginDisabled(ctx->opcode.fetched);
 		if (ImGui::Button("Fetch")) {
 			gui_fetch(ctx, CPU);
-		} 
+		}
 		ImGui::EndDisabled();
 
 		ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine();
@@ -420,6 +455,72 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 
 		ImGui::EndChild();
 		// End - Instruction View
+	}
+	if (ctx->memory.show) {
+		if (!ImGui::Begin("Memory")) {
+			ImGui::End();
+			ImGui::End();
+			return;
+		}
+
+		ImGui::SeparatorText("Address Range");
+		char buf[15];
+		std::snprintf(buf, sizeof(buf), "Start (0x%04X)", ctx->memory.start);
+		ImGui::InputInt(buf, &ctx->memory.start, 1, 16, ImGuiInputFlags_Repeat);
+		ctx->memory.start = std::clamp(ctx->memory.start, 0, static_cast<int>(ctx->memory.MAX));
+		char buf2[13];
+		std::snprintf(buf2, sizeof(buf2), "End (0x%04X)", ctx->memory.end);
+		ImGui::InputInt(buf2, &ctx->memory.end, 1, 16, ImGuiInputFlags_Repeat);
+		ctx->memory.end = std::clamp(ctx->memory.end, ctx->memory.start, static_cast<int>(ctx->memory.MAX));
+
+		if (!CPU->halted.load() && CPU->paused.load() && ImGui::Button("Snapshot")) {
+			ctx->memory.view = CPU->get_wram_chunk(ctx->memory.start, ctx->memory.end);
+		}
+
+		ImGui::SeparatorText("Memory View");
+
+		if (
+			ImGui::BeginTable(
+				"wram-table", 
+				17, 
+				ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders
+			)
+		) {
+			ImGui::TableSetupColumn("v + >");
+			for (int i = 0x0; i <= 0xF; ++i) {
+				char label[5];
+				std::snprintf(label, sizeof(label), "0x%02X", i);
+				ImGui::TableSetupColumn(label);
+			}
+			ImGui::TableHeadersRow();
+			std::cout << std::hex << "--------------------------------" << std::endl;
+			int start_aligned = ctx->memory.start & ~0x000F;
+			std::cout << start_aligned << "-s" << std::endl;
+			int end_aligned = ctx->memory.end | 0x000F;
+			std::cout << end_aligned << "-e" << std::endl;
+			int element_count = 1 + end_aligned - start_aligned;
+			std::cout << element_count << "-c" << std::endl;
+			int row_count = element_count / 16;
+			std::cout << row_count << "-r" << std::endl;
+
+			// 0x033 -> 0x03a
+			int off_start = ctx->memory.start - start_aligned; // 0x033 - 0x030 -> 3: 0, 1, 2
+			std::cout << off_start << "-os" << std::endl;
+			int off_end = end_aligned - ctx->memory.end;	   // 0x03f - 0x03a -> f-a = 5: b, c, d, e, f
+			std::cout << off_end << "-oe" << std::endl;
+
+
+
+
+
+			ImGui::EndTable();
+			if (ImGui::Button("Nigger")) {
+				std::cout << "ROWS: " << row_count << std::endl;
+				std::cout << std::hex << "[" << ctx->memory.start << ", " << ctx->memory.end << "] -> [" << (ctx->memory.start & ~0x000F) << ", " << (ctx->memory.end | 0x000F) << "]" << std::dec << std::endl;
+			}
+		}
+
+		ImGui::End();
 	}
 	ImGui::End();
 }

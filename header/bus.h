@@ -8,7 +8,7 @@ class bus : public memory {
 
 private:
 
-	std::array<u8, 0x0800_usize> cpu_vram;
+	std::array<u8, 0x0800_usize> cpu_wram;
 	cartridge* rom;
 
 public:
@@ -21,6 +21,8 @@ public:
 
 	u8 read_u8(const u16 address) const override;
 	void write_u8(const u16 address, const u8 value) override;
+
+	std::span<u8> get_wram_chunk(usize first_inclusive, usize last_inclusive);
 };
 
 #endif

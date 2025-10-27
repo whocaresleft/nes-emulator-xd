@@ -1,7 +1,7 @@
 #include "../header/bus.h"
 
 bus::bus() :
-	cpu_vram({}),
+	cpu_wram({}),
 	rom(nullptr)
 {}
 
@@ -12,7 +12,7 @@ void bus::load(cartridge* rom) {
 }
 
 u8 bus::read_u8(const u16 address) const {
-	if (address <= 0x1FFF) { return this->cpu_vram[address & 0x07FF]; }
+	if (address <= 0x1FFF) { return this->cpu_wram[address & 0x07FF]; }
 	if (0x2000 <= address && address <= 0x3FFF) { return 0; } // PPU
 	if (0x8000 <= address && address <= 0xFFFF) { 
 		u16 addr = address - 0x8000;
@@ -23,7 +23,11 @@ u8 bus::read_u8(const u16 address) const {
 	return 0;
 }
 void bus::write_u8(const u16 address, const u8 value) {
-	if (address <= 0x1FFF) { this->cpu_vram[address & 0x07FF] = value; }
+	if (address <= 0x1FFF) { this->cpu_wram[address & 0x07FF] = value; }
 	if (0x2000 <= address && address <= 0x3FFF) { return; } // PPU
 	if (0x8000 <= address && address <= 0xFFFF) { return; }
+}
+
+std::span<u8> bus::get_wram_chunk(usize first_inclusive, usize last_inclusive) {
+	return std::span<u8>(cpu_wram.begin() + first_inclusive, cpu_wram.begin() + last_inclusive + 1);
 }

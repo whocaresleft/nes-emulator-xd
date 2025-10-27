@@ -5,6 +5,7 @@
 #include <utility>
 #include <array>
 #include <vector>
+#include <span>
 
 typedef int8_t i8;
 typedef int16_t i16;
