@@ -24,9 +24,10 @@ typedef struct _gui_context {
 		bool stack_view;
 		struct _ram {
 			bool show;
-			int start;
-			int end;
+			u32 start;
+			u32 end;
 			bool mirrored;
+			u32 look_for;
 			std::span<u8> view;
 			constexpr static u16 MIN = 0x0000_u16;
 			constexpr static u16 MAX = 0x07FF_u16;
@@ -56,7 +57,7 @@ _gui_context* default_ctx() {
 	ctx->cpu.instruction_view = false;
 	ctx->cpu.reg = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x0000 };
 	ctx->cpu.opcode = { false, false, nullptr, {0x00, 0x00} };
-	ctx->cpu.memory = { false, 0x0000_u16, 0x000F_u16, false };
+	ctx->cpu.memory = { false, 0x0000_u16, 0x002F_u16, false, 0};
 	ctx->cpu.stack_view = false;
 
 	return ctx;
@@ -68,6 +69,14 @@ void cpu_window(_gui_context::_cpu*, cpu*);
 void gui_fetch(_gui_context::_cpu*, cpu*);
 void gui_decode(_gui_context::_cpu*, cpu*);
 void gui_execute(_gui_context::_cpu*, cpu*);
+
+bool InputHex(const char* label, u32* value, int step = 1, int step_fast = 16, int digits = 2, ImGuiInputTextFlags flags = ImGuiInputTextFlags_CharsHexadecimal) {
+	char* fmt = new char[digits + 1];
+	std::snprintf(fmt, digits + 1, "%%0%dX", digits);
+	bool to_ret = ImGui::InputScalar(label, ImGuiDataType_U32, value, &step, &step_fast, fmt, flags);
+	delete [] fmt;
+	return to_ret;
+}
 
 int main(int argc, char* argv[]) {
 
@@ -143,7 +152,7 @@ int main(int argc, char* argv[]) {
 
 	cpu* CPU = new cpu();
 	CPU->load(&c);
-	ctx->cpu.memory.view = CPU->get_wram_chunk(ctx->cpu.memory.start, ctx->cpu.memory.end);
+	ctx->cpu.memory.view = CPU->get_wram();
 
 	while (!done) {
 
@@ -295,9 +304,6 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 								usize len = ADDRESSING_MODES[ctx->opcode.instr->mode].length;
 								if (len > 1) ctx->opcode.operands[0] = cpu.read_u8(cpu.pc + 1);
 								if (len > 2) ctx->opcode.operands[1] = cpu.read_u8(cpu.pc + 2);
-							}
-							if (ctx->memory.show) {
-								ctx->memory.view = cpu.get_wram_chunk(ctx->memory.start, ctx->memory.end);
 							}
 						}
 					);
@@ -464,28 +470,41 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 		}
 
 		ImGui::SeparatorText("Address Range");
-		char buf[15];
-		std::snprintf(buf, sizeof(buf), "Start (0x%04X)", ctx->memory.start);
-		ImGui::InputInt(buf, &ctx->memory.start, 1, 16, ImGuiInputFlags_Repeat);
-		ctx->memory.start = std::clamp(ctx->memory.start, 0, static_cast<int>(ctx->memory.MAX));
-		char buf2[13];
-		std::snprintf(buf2, sizeof(buf2), "End (0x%04X)", ctx->memory.end);
-		ImGui::InputInt(buf2, &ctx->memory.end, 1, 16, ImGuiInputFlags_Repeat);
-		ctx->memory.end = std::clamp(ctx->memory.end, ctx->memory.start, static_cast<int>(ctx->memory.MAX));
+		ImGui::SetNextItemWidth(150.f);
+		InputHex("Start", &ctx->memory.start, 1, 16, 4);
+		ctx->memory.start = static_cast<u32>(std::clamp(static_cast<u16>(ctx->memory.start & 0x0000FFFF), 0_u16, ctx->memory.MAX));
 
-		if (!CPU->halted.load() && CPU->paused.load() && ImGui::Button("Snapshot")) {
-			ctx->memory.view = CPU->get_wram_chunk(ctx->memory.start, ctx->memory.end);
-		}
+		ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine(); ImGui::SetNextItemWidth(100.f);
+		InputHex("Addr##", &ctx->memory.look_for, 1, 16, 4);
+		ImGui::SameLine(); 
+		char go_buf[13];
+		std::snprintf(go_buf, sizeof(go_buf), "Go to 0x%04X", ctx->memory.look_for);
+		bool go_to_button_pressed = ImGui::Button(go_buf);
+		
+
+		ImGui::SetNextItemWidth(150.f);
+		InputHex("End", &ctx->memory.end, 1, 16, 4);
+		ctx->memory.end = static_cast<u32>(std::clamp(static_cast<u16>(ctx->memory.end & 0x0000FFFF), static_cast<u16>(ctx->memory.start & 0x0000FFFF), ctx->memory.MAX));
 
 		ImGui::SeparatorText("Memory View");
 
+		int start_aligned = ctx->memory.start & ~0x000F;
+		int end_aligned = ctx->memory.end | 0x000F;
+		int element_count = 1 + end_aligned - start_aligned;
+		int row_count = element_count / 16;
+
+		int height_multiplier = row_count > 2 ? 4 : (row_count > 1 ? 3 : 2);
+		float row_height = ImGui::GetTextLineHeightWithSpacing();
+		ImVec2 outer_size = ImVec2(0.0f, row_height * height_multiplier);
 		if (
 			ImGui::BeginTable(
 				"wram-table", 
 				17, 
-				ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders
+				ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY,
+				outer_size
 			)
 		) {
+			ImGui::TableSetupScrollFreeze(0, 1);
 			ImGui::TableSetupColumn("v + >");
 			for (int i = 0x0; i <= 0xF; ++i) {
 				char label[5];
@@ -493,31 +512,117 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 				ImGui::TableSetupColumn(label);
 			}
 			ImGui::TableHeadersRow();
-			std::cout << std::hex << "--------------------------------" << std::endl;
-			int start_aligned = ctx->memory.start & ~0x000F;
-			std::cout << start_aligned << "-s" << std::endl;
-			int end_aligned = ctx->memory.end | 0x000F;
-			std::cout << end_aligned << "-e" << std::endl;
-			int element_count = 1 + end_aligned - start_aligned;
-			std::cout << element_count << "-c" << std::endl;
-			int row_count = element_count / 16;
-			std::cout << row_count << "-r" << std::endl;
 
-			// 0x033 -> 0x03a
-			int off_start = ctx->memory.start - start_aligned; // 0x033 - 0x030 -> 3: 0, 1, 2
-			std::cout << off_start << "-os" << std::endl;
-			int off_end = end_aligned - ctx->memory.end;	   // 0x03f - 0x03a -> f-a = 5: b, c, d, e, f
-			std::cout << off_end << "-oe" << std::endl;
+			/* If off_start, start with ---- on the first row
+			 * If off_end, end with ---- on the last row
+			 * 
+			 * But, if start_aligned == end_aligned & ~0x000F, same row
+			 */
+			int off_start = ctx->memory.start - start_aligned;
+			int off_end = end_aligned - ctx->memory.end;
+			if (start_aligned == (end_aligned & ~0x000F)) {
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				char row_label[7];
+				std::snprintf(row_label, sizeof(row_label), "0x%04X", start_aligned);
+				ImGui::TextUnformatted(row_label);
+				int column = 0;
 
+				for (column; column < off_start; ++column) {
+					ImGui::TableSetColumnIndex(column + 1);
+					ImGui::TextUnformatted("----");
+				}
+				char cell_label[5];
+				
+				if (!CPU->halted.load() && CPU->paused.load()) {
+					for (column; column < (0xF - off_end) + 1; ++column) {
+						ImGui::TableSetColumnIndex(column + 1);
+						std::snprintf(cell_label, sizeof(cell_label), "0x%02X", ctx->memory.view[start_aligned + column]);
+						ImGui::TextUnformatted(cell_label);
+					}
+				}
+				for (column; column < 0x10; ++column) {
+					ImGui::TableSetColumnIndex(column + 1);
+					ImGui::TextUnformatted("----");
+				}
 
+			}
+			else {
+			
+				int column = 0;
+				char row_label[7];
+				char cell_label[5];
 
+				// First row
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				std::snprintf(row_label, sizeof(row_label), "0x%04X", start_aligned);
+				ImGui::TextUnformatted(row_label);
+				for (column; column < off_start; ++column) {
+					ImGui::TableSetColumnIndex(column + 1);
+					ImGui::TextUnformatted("----");
+				}
+				for (column; column < 0x10; ++column) {
+					ImGui::TableSetColumnIndex(column + 1);
+					std::snprintf(cell_label, sizeof(cell_label), "0x%02X", ctx->memory.view[start_aligned + column]);
+					ImGui::TextUnformatted(cell_label);
+				}
+				
+				// Intermediate rows
+				for (int row = 1; row < row_count - 1; ++row) {
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					std::snprintf(row_label, sizeof(row_label), "0x%04X", start_aligned + (row << 4));
+					ImGui::TextUnformatted(row_label);
+					column = 0;
+					for (column; column < 0x10; ++column) {
+						ImGui::TableSetColumnIndex(column + 1);
+						std::snprintf(cell_label, sizeof(cell_label), "0x%02X", ctx->memory.view[start_aligned + (row << 4) + column]);
+						ImGui::TextUnformatted(cell_label);
+					}
+				}
 
+				// Last row
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				std::snprintf(row_label, sizeof(row_label), "0x%04X", end_aligned & ~0x000F);
+				ImGui::TextUnformatted(row_label);
+				column = 0;
+				for (column; column < (0xF - off_end) + 1; ++column) {
+					ImGui::TableSetColumnIndex(column + 1);
+					std::snprintf(cell_label, sizeof(cell_label), "0x%02X", ctx->memory.view[(end_aligned & ~0x000F) + column]);
+					ImGui::TextUnformatted(cell_label);
+				}
+				for (column; column < 0x10; ++column) {
+					ImGui::TableSetColumnIndex(column + 1);
+					ImGui::TextUnformatted("----");
+				}
+
+			}
+
+			if (go_to_button_pressed) {
+				if (ctx->memory.look_for < ctx->memory.start || ctx->memory.look_for > ctx->memory.end) {
+					ImGui::OpenPopup("memory-view-range-error");
+				}
+				else {
+					u32 base = ctx->memory.look_for - start_aligned;
+					int row = base >> 4;
+					ImGui::SetScrollY(row_height * row);
+				}
+			}
+			if (ImGui::BeginPopup("memory-view-range-error")) {
+				char a_buf[36], b_buf[25];
+				std::snprintf(a_buf, sizeof(a_buf), "The address 0x%04X is outside range", ctx->memory.look_for);
+				ImGui::Text(a_buf);
+				std::snprintf(b_buf, sizeof(b_buf), "Range: [0x%04X - 0x%04X]", ctx->memory.start, ctx->memory.end);
+				ImGui::Text(b_buf);
+				if (ImGui::Button("Ok")) {
+					ImGui::CloseCurrentPopup();
+				}
+				ImGui::EndPopup();
+			}
 
 			ImGui::EndTable();
-			if (ImGui::Button("Nigger")) {
-				std::cout << "ROWS: " << row_count << std::endl;
-				std::cout << std::hex << "[" << ctx->memory.start << ", " << ctx->memory.end << "] -> [" << (ctx->memory.start & ~0x000F) << ", " << (ctx->memory.end | 0x000F) << "]" << std::dec << std::endl;
-			}
 		}
 
 		ImGui::End();

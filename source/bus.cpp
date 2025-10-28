@@ -3,7 +3,7 @@
 bus::bus() :
 	cpu_wram({}),
 	rom(nullptr)
-{}
+{ }
 
 bus::~bus() {}
 
@@ -28,6 +28,6 @@ void bus::write_u8(const u16 address, const u8 value) {
 	if (0x8000 <= address && address <= 0xFFFF) { return; }
 }
 
-std::span<u8> bus::get_wram_chunk(usize first_inclusive, usize last_inclusive) {
-	return std::span<u8>(cpu_wram.begin() + first_inclusive, cpu_wram.begin() + last_inclusive + 1);
+std::span<u8> bus::get_wram() {
+	return std::span<u8>(cpu_wram);
 }

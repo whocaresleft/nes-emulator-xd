@@ -46,8 +46,8 @@ void cpu::push_u16(u16 value) {
 	return;
 }
 
-std::span<u8> cpu::get_wram_chunk(usize first_inclusive, usize last_inclusive) {
-	return this->cpu_bus.get_wram_chunk(first_inclusive, last_inclusive);
+std::span<u8> cpu::get_wram() {
+	return this->cpu_bus.get_wram();
 }
 
 std::pair<u16, bool> cpu::get_absolute_address(u16 address) const {

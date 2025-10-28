@@ -43,7 +43,7 @@ public:
 	std::atomic<bool> paused;
 
 	const instruction* decoded;
-	std::span<u8> get_wram_chunk(usize first_inclusive, usize last_inclusive);
+	std::span<u8> get_wram();
 private:
 
 	std::mutex mtx;
