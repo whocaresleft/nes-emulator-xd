@@ -19,14 +19,11 @@
     <Filter Include="Source Files\imgui">
       <UniqueIdentifier>{a48e9dcd-f5f8-4b98-91a0-36e77973cd03}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\imguifiledialog">
+      <UniqueIdentifier>{4a63c17c-cfac-43a6-9cf7-0d88e792f291}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="source\bus.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="source\cartridge.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="source\cpu.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -54,6 +51,9 @@
     <ClCompile Include="third_party\imgui\imgui_demo.cpp">
       <Filter>Source Files\imgui</Filter>
     </ClCompile>
+    <ClCompile Include="third_party\imguifiledialog\ImGuiFileDialog.cpp">
+      <Filter>Header Files\imguifiledialog</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="resource\nestest.log">
@@ -61,6 +61,9 @@
     </Text>
     <Text Include="resource\nestest.txt">
       <Filter>Resource Files</Filter>
+    </Text>
+    <Text Include="third_party\imguifiledialog\CMakeLists.txt">
+      <Filter>Header Files\imguifiledialog</Filter>
     </Text>
   </ItemGroup>
   <ItemGroup>
@@ -77,9 +80,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="header\instruction.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="header\memory.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="third_party\imgui\backends\imgui_impl_opengl3.h">
@@ -112,5 +112,22 @@
     <ClInclude Include="header\utility.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="third_party\imguifiledialog\ImGuiFileDialog.h">
+      <Filter>Header Files\imguifiledialog</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\imguifiledialog\ImGuiFileDialogConfig.h">
+      <Filter>Header Files\imguifiledialog</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="third_party\imguifiledialog\Documentation.md">
+      <Filter>Header Files\imguifiledialog</Filter>
+    </None>
+    <None Include="third_party\imguifiledialog\LICENSE">
+      <Filter>Header Files\imguifiledialog</Filter>
+    </None>
+    <None Include="third_party\imguifiledialog\README.md">
+      <Filter>Header Files\imguifiledialog</Filter>
+    </None>
   </ItemGroup>
 </Project>

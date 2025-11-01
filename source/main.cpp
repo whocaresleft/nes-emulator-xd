@@ -1,5 +1,6 @@
 #include "../third_party/imgui/imgui.h"
 #include "../third_party/imgui/backends/imgui_impl_opengl3.h"
+#include "../third_party/imguifiledialog/ImGuiFileDialog.h"
 #include "../third_party/imgui/backends/imgui_impl_sdl2.h"
 #include <SDL.h>
 #include <SDL_opengl.h>
@@ -14,14 +15,37 @@
 #include <span>
 
 typedef struct _gui_context {
+	struct _rom {
+		bool hide;
+		bool inserted, loaded;
+		bool show_prg, show_chr;
+		std::filesystem::path game_path_opened, game_path_loaded;
+		cartridge* game_opened;
+		cartridge* game_loaded;
+
+		_rom() :
+			hide(true),
+			inserted(false),
+			loaded(false),
+			game_opened(nullptr),
+			game_loaded(nullptr),
+			game_path_opened(),
+			game_path_loaded(),
+			show_chr(false),
+			show_prg(false)
+		{}
+	} rom;
 
 	struct _cpu {
+
+		bool something_loaded;
 		bool has_started;
 		float last_freq;
 		bool hide;
 		bool register_view;
 		bool instruction_view;
 		bool stack_view;
+		usize cycles;
 		struct _ram {
 			bool show;
 			u32 start;
@@ -32,43 +56,90 @@ typedef struct _gui_context {
 			constexpr static u16 MIN = 0x0000_u16;
 			constexpr static u16 MAX = 0x07FF_u16;
 			constexpr static u16 MAX_MIRRORED = 0x1FFF_u16;
+
+			_ram() :
+				show(false),
+				start(0x0000_u16),
+				end(0x002F_u16),
+				mirrored(false),
+				look_for(0x0000_u16),
+				view()
+			{}
 		} memory;
-		struct registers {
+		struct _registers {
 			u8 a, x, y, sp, p;
 			u16 pc;
-		} reg;
+			_registers() : 
+				a(0x00),
+				x(0x00),
+				y(0x00),
+				sp(0x00),
+				p(0x00),
+				pc(0x0000)
+			{}
+		} registers;
 		struct _opcode {
 			bool fetched;
 			bool executed;
 			const instruction* instr;
 
 			int operands[2];
+
+			_opcode() :
+				fetched(false),
+				executed(false),
+				instr(nullptr),
+				operands(0, 0)
+			{}
 		} opcode;
-	} cpu;
-} _gui_context;
-_gui_context* default_ctx() {
 	
-	_gui_context* ctx = new _gui_context();
+		_cpu() :
+			something_loaded(false),
+			has_started(false),
+			last_freq(.0f),
+			hide(true),
+			register_view(false),
+			instruction_view(false),
+			stack_view(false),
+			cycles(7_usize),
+			memory(),
+			registers(),
+			opcode()
+		{}
+	} cpu;
 
-	ctx->cpu.has_started = false;
-	ctx->cpu.last_freq = .0f;
-	ctx->cpu.hide = true;
-	ctx->cpu.register_view = false;
-	ctx->cpu.instruction_view = false;
-	ctx->cpu.reg = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x0000 };
-	ctx->cpu.opcode = { false, false, nullptr, {0x00, 0x00} };
-	ctx->cpu.memory = { false, 0x0000_u16, 0x002F_u16, false, 0};
-	ctx->cpu.stack_view = false;
+	_gui_context() : 
+		rom(),
+		cpu()
+	{}
+} _gui_context;
 
-	return ctx;
-}
-
-struct _gui_context;
+void rom_window(_gui_context::_rom*, cpu*);
 void cpu_window(_gui_context::_cpu*, cpu*);
 
-void gui_fetch(_gui_context::_cpu*, cpu*);
-void gui_decode(_gui_context::_cpu*, cpu*);
-void gui_execute(_gui_context::_cpu*, cpu*);
+inline void static gui_fetch(_gui_context::_cpu*, cpu*);
+inline void static gui_decode(_gui_context::_cpu*, cpu*);
+inline void static gui_execute(_gui_context::_cpu*, cpu*);
+
+inline void static update_cpu_registers(_gui_context::_cpu* ctx, cpu* cpu) {
+	ctx->registers.pc = cpu->pc;
+	ctx->cycles = cpu->cycles;
+	if (ctx->register_view) {
+		ctx->registers.a = cpu->a;
+		ctx->registers.x = cpu->x;
+		ctx->registers.y = cpu->y;
+		ctx->registers.p = cpu->p;
+		ctx->registers.sp = cpu->sp;
+	}
+}
+inline void static update_cpu_instruction(_gui_context::_cpu* ctx, cpu* cpu) {
+	if (ctx->instruction_view) {
+		ctx->opcode.instr = &INSTRUCTIONS[cpu->opcode];
+		usize len = ADDRESSING_MODES[ctx->opcode.instr->mode].length;
+		if (len > 1) ctx->opcode.operands[0] = cpu->read_u8(cpu->pc + 1);
+		if (len > 2) ctx->opcode.operands[1] = cpu->read_u8(cpu->pc + 2);
+	}
+}
 
 bool InputHex(const char* label, u32* value, int step = 1, int step_fast = 16, int digits = 2, ImGuiInputTextFlags flags = ImGuiInputTextFlags_CharsHexadecimal) {
 	char* fmt = new char[digits + 1];
@@ -80,7 +151,7 @@ bool InputHex(const char* label, u32* value, int step = 1, int step_fast = 16, i
 
 int main(int argc, char* argv[]) {
 
-	_gui_context* ctx = default_ctx();
+	_gui_context* ctx = new _gui_context();
 
 	// SDL Context
 #ifdef _WIN32
@@ -147,12 +218,10 @@ int main(int argc, char* argv[]) {
 
 	bool show_demo_window = true;
 	bool done = false;
-	std::vector<u8> x = read_file(".\\resource\\nestest.nes");
-	cartridge c(x);
 
 	cpu* CPU = new cpu();
-	CPU->load(&c);
 	ctx->cpu.memory.view = CPU->get_wram();
+	update_cpu_registers(&ctx->cpu, CPU);
 
 	while (!done) {
 
@@ -205,11 +274,10 @@ int main(int argc, char* argv[]) {
 					ImGui::EndMenu();
 				}
 
-				if (ImGui::BeginMenu("VRAM")) {
-					ImGui::EndMenu();
-				}
-
 				if (ImGui::BeginMenu("ROM")) {
+					if (ImGui::MenuItem(ctx->rom.hide ? "Show" : "Hide")) {
+						ctx->rom.hide = !ctx->rom.hide;
+					}
 					ImGui::EndMenu();
 				}
 
@@ -224,9 +292,8 @@ int main(int argc, char* argv[]) {
 				ImGui::EndMainMenuBar();
 			}
 
-			if (!ctx->cpu.hide) {
-				cpu_window(&(ctx->cpu), CPU);
-			}
+			if (!ctx->cpu.hide) { cpu_window(&(ctx->cpu), CPU); }
+			if (!ctx->rom.hide) { rom_window(&(ctx->rom), CPU); }
 		}
 
 		/* * * * * * * * * * Main Window End * * * * * * * * * */
@@ -240,6 +307,8 @@ int main(int argc, char* argv[]) {
 	}
 
 	// Cleanup
+	if (ctx->rom.game_opened != nullptr) { delete ctx->rom.game_opened; }
+	if (ctx->rom.game_loaded != nullptr) { delete ctx->rom.game_loaded; }
 	delete ctx;
 	delete CPU;
 	ImGui_ImplOpenGL3_Shutdown();
@@ -253,6 +322,146 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 
+void rom_window(_gui_context::_rom* ctx, cpu* cpu) {
+
+	if (!ImGui::Begin("Rom", nullptr)) {
+		ImGui::End();
+		return;
+	}
+
+	ImGui::SeparatorText("Load Rom");
+	if (ImGui::Button("Open")) {
+		IGFD::FileDialogConfig config;
+		config.path = ".";
+		ImGuiFileDialog::Instance()->OpenDialog("choose-file", "Choose Rom", ".nes,.txt", config);
+	}
+	if (ImGuiFileDialog::Instance()->Display("choose-file")) {
+		if (ImGuiFileDialog::Instance()->IsOk()) {
+			std::string s = ImGuiFileDialog::Instance()->GetFilePathName();
+			ctx->game_path_loaded = std::filesystem::path(s);
+			std::vector<u8> x = read_file(s);
+			ctx->game_opened = new cartridge(x);
+			ctx->inserted = true;
+			ctx->loaded = false;
+		}
+
+		ImGuiFileDialog::Instance()->Close();
+	}
+
+	if (ctx->inserted && !ctx->loaded) {
+		ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine();
+		if (ImGui::Button("Load")) {
+			ctx->game_loaded = new cartridge(*ctx->game_opened);
+			ctx->game_path_loaded = ctx->game_path_loaded;
+			cpu->load(ctx->game_loaded);
+			
+			cpu->reset();
+			ctx->loaded = true;
+			
+		}
+		ImGui::Text("Rom name: %s", ctx->game_path_opened.filename().string().c_str());
+	}
+
+	ImGui::SeparatorText("Currently loaded Rom");
+
+	if (ctx->game_loaded != nullptr) {
+		ImGui::Text("Name: %s", ctx->game_path_loaded.filename().string().c_str());
+		ImGui::Text("Mapper: %d", static_cast<int>(ctx->game_loaded->mapper));
+		int mirroring = ctx->game_loaded->screen_mirroring;
+		ImGui::Text("Screen mirroring: %d (%s)", mirroring, cartridge::SCREEN_MIRRORING_NAMES[mirroring]);
+
+		if (ctx->show_prg = ImGui::TreeNode("Prg content")) {
+
+			usize row_count = ctx->game_loaded->prg_rom.size() / 16;
+			int height_multiplier = row_count > 2 ? 4 : (row_count > 1 ? 3 : 2);
+			float row_height = ImGui::GetTextLineHeightWithSpacing();
+
+			ImVec2 outer_size = ImVec2(0.0f, row_height * height_multiplier);
+			if (
+				ImGui::BeginTable(
+					"prg-rom-table",
+					17,
+					ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY,
+					outer_size
+				)
+				) {
+				ImGui::TableSetupScrollFreeze(0, 1);
+				ImGui::TableSetupColumn("v + >");
+				for (int i = 0x0; i <= 0xF; ++i) {
+					char label[5];
+					std::snprintf(label, sizeof(label), "0x%02X", i);
+					ImGui::TableSetupColumn(label);
+				}
+				ImGui::TableHeadersRow();
+				int column = 0;
+				char row_label[7];
+				char cell_label[5];
+				// Intermediate rows
+				for (int row = 0; row < row_count; ++row) {
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					std::snprintf(row_label, sizeof(row_label), "0x%04X", (row << 4));
+					ImGui::TextUnformatted(row_label);
+					column = 0;
+					for (column; column < 0x10; ++column) {
+						ImGui::TableSetColumnIndex(column + 1);
+						std::snprintf(cell_label, sizeof(cell_label), "0x%02X", ctx->game_loaded->prg_rom[(row << 4) + column]);
+						ImGui::TextUnformatted(cell_label);
+					}
+				}
+
+				ImGui::EndTable();
+			}
+			ImGui::TreePop();
+		}
+		if (ctx->show_chr = ImGui::TreeNode("Chr cnotent")) {
+
+			usize row_count = ctx->game_loaded->chr_rom.size() / 16;
+			int height_multiplier = row_count > 2 ? 4 : (row_count > 1 ? 3 : 2);
+			float row_height = ImGui::GetTextLineHeightWithSpacing();
+
+			ImVec2 outer_size = ImVec2(0.0f, row_height * height_multiplier);
+			if (
+				ImGui::BeginTable(
+					"chr-rom-table",
+					17,
+					ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY,
+					outer_size
+				)
+				) {
+				ImGui::TableSetupScrollFreeze(0, 1);
+				ImGui::TableSetupColumn("v + >");
+				for (int i = 0x0; i <= 0xF; ++i) {
+					char label[5];
+					std::snprintf(label, sizeof(label), "0x%02X", i);
+					ImGui::TableSetupColumn(label);
+				}
+				ImGui::TableHeadersRow();
+				int column = 0;
+				char row_label[7];
+				char cell_label[5];
+				// Intermediate rows
+				for (int row = 0; row < row_count; ++row) {
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					std::snprintf(row_label, sizeof(row_label), "0x%04X", (row << 4));
+					ImGui::TextUnformatted(row_label);
+					column = 0;
+					for (column; column < 0x10; ++column) {
+						ImGui::TableSetColumnIndex(column + 1);
+						std::snprintf(cell_label, sizeof(cell_label), "0x%02X", ctx->game_loaded->chr_rom[(row << 4) + column]);
+						ImGui::TextUnformatted(cell_label);
+					}
+				}
+
+				ImGui::EndTable();
+			}
+			ImGui::TreePop();
+		}
+	}
+
+	ImGui::End();
+}
 
 void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 
@@ -281,6 +490,7 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 			ImGui::PlotLines("CPU Frequency", freq, 1, 0, nullptr, -1.f, 1.f, ImVec2(100.f, 20.f));
 			ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine();
 
+			ImGui::BeginDisabled(!CPU->rom_loaded);
 			if (ctx->has_started) {
 				if (ImGui::Button("Resume")) {
 					CPU->resume();
@@ -291,25 +501,14 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 					CPU->run_async(
 						[](cpu&) {},
 						[ctx](cpu& cpu) {
-							ctx->reg.pc = cpu.pc;
-							if (ctx->register_view) {
-								ctx->reg.a = cpu.a;
-								ctx->reg.x = cpu.x;
-								ctx->reg.y = cpu.y;
-								ctx->reg.p = cpu.p;
-								ctx->reg.sp = cpu.sp;
-							}
-							if (ctx->instruction_view) {
-								ctx->opcode.instr = &INSTRUCTIONS[cpu.opcode];
-								usize len = ADDRESSING_MODES[ctx->opcode.instr->mode].length;
-								if (len > 1) ctx->opcode.operands[0] = cpu.read_u8(cpu.pc + 1);
-								if (len > 2) ctx->opcode.operands[1] = cpu.read_u8(cpu.pc + 2);
-							}
+							update_cpu_registers(ctx, &cpu);
+							update_cpu_instruction(ctx, &cpu);
 						}
 					);
 					ctx->has_started = true;
 				}
 			}
+			ImGui::EndDisabled();
 
 		}
 		else {
@@ -339,17 +538,17 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 		{
 			{
 				ImGui::BeginGroup();
-				ImGui::Text("A:    0x%02X", ctx->reg.a);
-				ImGui::Text("X:    0x%02X", ctx->reg.x);
-				ImGui::Text("Y:    0x%02X", ctx->reg.y);
+				ImGui::Text("A:    0x%02X", ctx->registers.a);
+				ImGui::Text("X:    0x%02X", ctx->registers.x);
+				ImGui::Text("Y:    0x%02X", ctx->registers.y);
 				ImGui::EndGroup();
 			}
 			ImGui::SameLine();
 			{
 				ImGui::BeginGroup();
-				ImGui::Text("PC: 0x%04X", ctx->reg.pc);
-				ImGui::Text("SP:   0x%02X", ctx->reg.sp);
-				ImGui::Text("P:    0x%02X", ctx->reg.p);
+				ImGui::Text("PC: 0x%04X", ctx->registers.pc);
+				ImGui::Text("SP:   0x%02X", ctx->registers.sp);
+				ImGui::Text("P:    0x%02X", ctx->registers.p);
 				ImGui::EndGroup();
 			}
 		}
@@ -361,7 +560,7 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 		ImGui::BeginChild("status", ImVec2(0.f, 65.f));
 		{
 			ImGui::SeparatorText("Status (P) flags");
-			u8 p = ctx->reg.p;
+			u8 p = ctx->registers.p;
 			ImGui::BeginGroup();
 			{
 				ImGui::BeginDisabled(!(p & 0b10000000)); ImGui::Text("Negative"); ImGui::EndDisabled();
@@ -400,10 +599,10 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 		ImGui::BeginChild("instruction-panel");
 
 		// pc, buttons (fetch, decode, execute)
-		ImGui::Text("PC: 0x%04X", ctx->reg.pc);
+		ImGui::Text("PC: 0x%04X", ctx->registers.pc);
 		ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine();
 
-		ImGui::BeginDisabled(CPU->halted.load() || !CPU->paused.load());
+		ImGui::BeginDisabled(!CPU->rom_loaded || CPU->halted.load() || !CPU->paused.load());
 		ImGui::BeginDisabled(ctx->opcode.fetched);
 		if (ImGui::Button("Fetch")) {
 			gui_fetch(ctx, CPU);
@@ -450,9 +649,11 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 			else ImGui::Text("    ");
 			ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine();
 			ImGui::Text("%s", _instr->mnemonic);
+			ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine();
+			ImGui::Text("Cumulated cycles: %d", ctx->cycles);
 
 			ImGui::Spacing();
-			ImGui::Text("Addressing Mode: &s", ADDRESSING_MODE_NAMES[_instr->mode]);
+			ImGui::Text("Addressing Mode: %s", ADDRESSING_MODE_NAMES[_instr->mode]);
 			ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine();
 			ImGui::Text("Bytes:  %d", mode.length);
 			ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine();
@@ -630,20 +831,22 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 	ImGui::End();
 }
 
-void gui_fetch(_gui_context::_cpu* ctx, cpu* CPU) {
+inline void static gui_fetch(_gui_context::_cpu* ctx, cpu* CPU) {
 	CPU->fetch();
 	ctx->opcode.fetched = true;
 	ctx->opcode.executed = false;
+
+	update_cpu_registers(ctx, CPU);
 }
-void gui_decode(_gui_context::_cpu* ctx, cpu* CPU) {
+inline void static gui_decode(_gui_context::_cpu* ctx, cpu* CPU) {
 	CPU->decode();
-	ctx->opcode.instr = CPU->decoded;
-	usize len = ADDRESSING_MODES[CPU->decoded->mode].length;
-	if (len > 1) { ctx->opcode.operands[0] = CPU->read_u8(CPU->pc); }
-	if (len > 2) { ctx->opcode.operands[1] = CPU->read_u8(CPU->pc + 1); }
+
+	update_cpu_instruction(ctx, CPU);
 }
-void gui_execute(_gui_context::_cpu* ctx, cpu* CPU) {
+inline void static gui_execute(_gui_context::_cpu* ctx, cpu* CPU) {
 	CPU->execute();
 	ctx->opcode.fetched = false;
 	ctx->opcode.executed = true;
+
+	update_cpu_registers(ctx, CPU);
 }

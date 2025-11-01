@@ -1,54 +1,5 @@
 #include "../header/cpu.h"
 
-cpu::cpu() :
-
-	opcode(0x00_u8),
-	decoded(nullptr),
-
-	pc(0x8000_u16),
-	sp(STACK_RESET),
-	a(0x00_u8),
-	x(0x00_u8),
-	y(0x00_u8),
-	p(0x00_u8 | F_INTERRUPT_DISABLE | F_GHOST),
-	cycles(7_usize),
-	halted(false),
-	paused(true),
-
-	cpu_bus()
-{
-	//this->pc = this->read_u16(0xFFFC);
-}
-
-cpu::~cpu() { this->cpu_bus.~bus(); }
-
-u8 cpu::read_u8(const u16 address) const {
-	return this->cpu_bus.read_u8(address);
-}
-void cpu::write_u8(const u16 address, const u8 value) {
-	this->cpu_bus.write_u8(address, value);
-	return;
-}
-
-u8 cpu::pop_u8() {
-	return this->read_u8(STACK | static_cast<u16>(++this->sp));
-}
-u16 cpu::pop_u16() {
-	return static_cast<u16>(this->pop_u8()) | static_cast<u16>((this->pop_u8()) << 8);
-}
-void cpu::push_u8(u8 value) {
-	this->write_u8(STACK | static_cast<u16>(this->sp--), value);
-	return;
-}
-void cpu::push_u16(u16 value) {
-	this->push_u8(static_cast<u8>((value & 0xFF00) >> 8));
-	this->push_u8(static_cast<u8>(value & 0x00FF));
-	return;
-}
-
-std::span<u8> cpu::get_wram() {
-	return this->cpu_bus.get_wram();
-}
 
 std::pair<u16, bool> cpu::get_absolute_address(u16 address) const {
 	return std::pair<u16, bool> { this->read_u16(address), false };
@@ -541,36 +492,6 @@ void cpu::jmp_ind (const addressing_mode mode) {
 	this->pc = indirect_ref;
 }
 
-void cpu::set_carry(const bool value)				{ value ? this->p |= F_CARRY : this->p &= ~F_CARRY; }
-void cpu::set_zero(const bool value)				{ value ? this->p |= F_ZERO : this->p &= ~F_ZERO; }
-void cpu::set_interrupt_disable(const bool value)	{ value ? this->p |= F_INTERRUPT_DISABLE : this->p &= ~F_INTERRUPT_DISABLE; }
-void cpu::set_decimal_mode(const bool value)		{ value ? this->p |= F_DECIMAL_MODE : this->p &= ~F_DECIMAL_MODE; }
-void cpu::set_break(const bool value)				{ value ? this->p |= F_BREAK : this->p &= ~F_BREAK; }
-void cpu::set_overflow(const bool value)			{ value ? this->p |= F_OVERFLOW : this->p &= ~F_OVERFLOW; }
-void cpu::set_negative(const bool value)			{ value ? this->p |= F_NEGATIVE : this->p &= ~F_NEGATIVE; }
-
-bool cpu::get_carry()				{ return 0 != (this->p & F_CARRY); }
-bool cpu::get_zero()				{ return 0 != (this->p & F_ZERO); }
-bool cpu::get_interrupt_disable()	{ return 0 != (this->p & F_INTERRUPT_DISABLE); }
-bool cpu::get_decimal_mode()		{ return 0 != (this->p & F_DECIMAL_MODE); }
-bool cpu::get_break()				{ return 0 != (this->p & F_BREAK); }
-bool cpu::get_overflow()			{ return 0 != (this->p & F_OVERFLOW); }
-bool cpu::get_negative()			{ return 0 != (this->p & F_NEGATIVE); }
-
-void cpu::update_negative_zero(const u8 value) {
-	this->set_zero(value == 0_u8);
-	this->set_negative(0_u8 != (value & 0b10000000));
-	return;
-}
-
-void cpu::tick(const usize cycles) {
-	this->cycles += cycles;
-}
-
-void cpu::set_a(const u8 value) {
-	this->a = value;
-	this->update_negative_zero(this->a);
-}
 void cpu::add_to_a(const u8 value) {
 	u16 carry;
 	if (this->get_carry()) carry = 1_u16;
@@ -603,10 +524,6 @@ void cpu::compare(const addressing_mode mode, const u8 compare_with) {
 }
 
 #include <iostream>
-void cpu::fetch() {
-	this->opcode = this->read_u8(this->pc++);
-	std::cout << std::hex << "Fetched " << static_cast<int>(this->opcode) << " at " << static_cast<int>(this->pc - 1) << std::dec << std::endl;
-}
 
 void cpu::decode() {
 	this->decoded = &INSTRUCTIONS[static_cast<usize>(this->opcode)];
@@ -746,30 +663,6 @@ std::string cpu::trace() const {
 	return result.str();
 }
 
-void cpu::load(cartridge* rom) {
-	this->cpu_bus.load(rom);
-}
-void cpu::reset() {
-	this->opcode = 0x00_u8;
-	this->decoded = nullptr;
-	this->sp = STACK_RESET;
-	this->a = 0x00_u8;
-	this->x = 0x00_u8;
-	this->y = 0x00_u8;
-	this->p = 0x00_u8 | F_INTERRUPT_DISABLE | F_GHOST;
-	this->cycles = 7_usize;
-	this->halted = false;
-	this->paused = true;
-	//this->pc = this->read_u16(0xFFFC_u16);
-	this->pc = 0xC000;
-}
-
-void cpu::run() {
-	this->run_with_callbacks(
-		[](cpu&) {},
-		[](cpu&) {}
-	);
-}
 constexpr addressing_mode ADDRESSING_MODES[13] = {
 	{ 3_u8, &cpu::get_absolute_address }, // absolute
 	{ 3_u8, &cpu::get_absolute_x_address }, // absolute_x

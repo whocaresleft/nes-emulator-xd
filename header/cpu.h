@@ -16,7 +16,7 @@ struct instruction;
 struct addressing_mode;
 
 
-class cpu : public memory
+class cpu
 {
 private:
 	constexpr static u16 STACK = 0x0100_u16;
@@ -42,8 +42,9 @@ public:
 	std::atomic<bool> halted;
 	std::atomic<bool> paused;
 
+	bool rom_loaded;
 	const instruction* decoded;
-	std::span<u8> get_wram();
+	std::span<u8> get_wram() { return this->cpu_bus.get_wram(); }
 private:
 
 	std::mutex mtx;
@@ -52,30 +53,34 @@ private:
 
 	bus cpu_bus;
 
-	void tick(const usize cycles);
+	void tick(const usize cycles) { this->cycles += cycles; }
 
-	void set_a(const u8 value);
+	void set_a(const u8 value) { this->a = value; this->update_negative_zero(this->a); }
 	void add_to_a(const u8 value);
 	void branch(const bool condition);
 	void compare(const addressing_mode mode, const u8 compare_with);
 
-	void set_carry(bool value);
-	void set_zero(bool value);
-	void set_interrupt_disable(bool value);
-	void set_decimal_mode(bool value);
-	void set_break(bool value);
-	void set_overflow(bool value);
-	void set_negative(bool value);
+	void set_carry(const bool value) { value ? this->p |= F_CARRY : this->p &= ~F_CARRY; }
+	void set_zero(const bool value) { value ? this->p |= F_ZERO : this->p &= ~F_ZERO; }
+	void set_interrupt_disable(const bool value) { value ? this->p |= F_INTERRUPT_DISABLE : this->p &= ~F_INTERRUPT_DISABLE; }
+	void set_decimal_mode(const bool value) { value ? this->p |= F_DECIMAL_MODE : this->p &= ~F_DECIMAL_MODE; }
+	void set_break(const bool value) { value ? this->p |= F_BREAK : this->p &= ~F_BREAK; }
+	void set_overflow(const bool value) { value ? this->p |= F_OVERFLOW : this->p &= ~F_OVERFLOW; }
+	void set_negative(const bool value) { value ? this->p |= F_NEGATIVE : this->p &= ~F_NEGATIVE; }
 
-	bool get_carry();
-	bool get_zero();
-	bool get_interrupt_disable();
-	bool get_decimal_mode();
-	bool get_break();
-	bool get_overflow();
-	bool get_negative();
+	bool get_carry() { return 0 != (this->p & F_CARRY); }
+	bool get_zero() { return 0 != (this->p & F_ZERO); }
+	bool get_interrupt_disable() { return 0 != (this->p & F_INTERRUPT_DISABLE); }
+	bool get_decimal_mode() { return 0 != (this->p & F_DECIMAL_MODE); }
+	bool get_break() { return 0 != (this->p & F_BREAK); }
+	bool get_overflow() { return 0 != (this->p & F_OVERFLOW); }
+	bool get_negative() { return 0 != (this->p & F_NEGATIVE); }
 
-	void update_negative_zero(const u8 value);
+	void update_negative_zero(const u8 value) {
+		this->set_zero(value == 0_u8);
+		this->set_negative(0_u8 != (value & 0b10000000));
+		return;
+	}
 public:
 	
 	std::pair<u16, bool> get_absolute_address(const u16 address) const;
@@ -170,37 +175,63 @@ public:
 	void cmp(const addressing_mode mode);
 	void xaa(const addressing_mode mode);
 
-	cpu();
+	cpu() :
+		rom_loaded(false),
+		opcode(0x00_u8),
+		decoded(nullptr),
+
+		pc(0x8000_u16),
+		sp(STACK_RESET),
+		a(0x00_u8),
+		x(0x00_u8),
+		y(0x00_u8),
+		p(0x00_u8 | F_INTERRUPT_DISABLE | F_GHOST),
+		cycles(7_usize),
+		halted(false),
+		paused(true),
+
+		cpu_bus()
+	{
+		//this->pc = this->read_u16(0xFFFC);
+	}
 	cpu(cpu& to_copy) = delete;
 	cpu(cpu&& to_move) noexcept = delete;
 
-	void load(cartridge* rom);
-	void reset();
-
-	u8 read_u8(const u16 address) const override;
-	void write_u8(const u16 address, const u8 value) override;
-
-	u8 pop_u8();
-	u16 pop_u16();
-	void push_u8(const u8 value);
-	void push_u16(const u16 value);
-	
-
-	void run();
-	template <typename F>
-	void run_with_callback_first(F&& first) {
-		this->run_with_callbacks(
-			first,
-			[](cpu&) {}
-		);
+	void load(cartridge* rom) { 
+		this->cpu_bus.load(rom);
+		this->rom_loaded = true;
 	}
-	template <typename L>
-	void run_with_callback_last(L&& last) {
-		this->run_with_callbacks(
-			[](cpu&) {},
-			last
-		);
+	void reset() {
+		this->opcode = 0x00_u8;
+		this->decoded = nullptr;
+		this->sp = STACK_RESET;
+		this->a = 0x00_u8;
+		this->x = 0x00_u8;
+		this->y = 0x00_u8;
+		this->p = 0x00_u8 | F_INTERRUPT_DISABLE | F_GHOST;
+		this->cycles = 7_usize;
+		this->halted = false;
+		this->paused = true;
+		//this->pc = this->read_u16(0xFFFC_u16);
+		this->pc = 0xC000;
 	}
+
+	u8 read_u8(const u16 address) const { return this->cpu_bus.read_u8(address); }
+	void write_u8(const u16 address, const u8 value) { this->cpu_bus.write_u8(address, value); }
+	u16 read_u16(const u16 address) const { return this->cpu_bus.read_u16(address); }
+	void write_u16(const u16 address, const u16 value) { this->cpu_bus.write_u16(address, value); }
+
+	u8 pop_u8() { return this->read_u8(STACK | static_cast<u16>(++this->sp)); }
+	u16 pop_u16() { return static_cast<u16>(this->pop_u8()) | static_cast<u16>((this->pop_u8()) << 8); }
+	void push_u8(const u8 value) { this->write_u8(STACK | static_cast<u16>(this->sp--), value); }
+	void push_u16(const u16 value) {
+		this->push_u8(static_cast<u8>((value & 0xFF00) >> 8));
+		this->push_u8(static_cast<u8>(value & 0x00FF));
+	}
+
+	void run() { this->run_with_callbacks([](cpu&) {}, [](cpu&) {}); }
+	template <typename F> void run_with_callback_first(F&& first) { this->run_with_callbacks(first, [](cpu&) {}); }
+	template <typename L> void run_with_callback_last(L&& last) { this->run_with_callbacks([](cpu&) {}, last); }
 	template <typename F, typename L>
 	void run_with_callbacks(F&& first, L&& last) {
 		while (!this->halted) {
@@ -214,12 +245,7 @@ public:
 		}
 	}
 
-	void run_async() {
-		this->run_async(
-			[](cpu&) {},
-			[](cpu&) {}
-		);
-	}
+	void run_async() { this->run_async([](cpu&) {}, [](cpu&) {}); }
 	template <typename F, typename L>
 	void run_async(F&& first, L&& last) {
 		if (halted.load()) return;
@@ -264,9 +290,12 @@ public:
 
 	std::string trace() const;
 
-	~cpu();
+	~cpu() { this->halted.store(true); }
 
-	void fetch();
+	void fetch() {
+		this->opcode = this->read_u8(this->pc++);
+		std::cout << std::hex << "Fetched " << static_cast<int>(this->opcode) << " at " << static_cast<int>(this->pc - 1) << std::dec << std::endl;
+	}
 	void decode();
 	void execute();
 };

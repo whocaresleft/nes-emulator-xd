@@ -19,10 +19,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="source\bus.cpp" />
-    <ClCompile Include="source\cartridge.cpp" />
     <ClCompile Include="source\cpu.cpp" />
     <ClCompile Include="source\main.cpp" />
+    <ClCompile Include="third_party\imguifiledialog\ImGuiFileDialog.cpp" />
     <ClCompile Include="third_party\imgui\backends\imgui_impl_opengl3.cpp" />
     <ClCompile Include="third_party\imgui\backends\imgui_impl_sdl2.cpp" />
     <ClCompile Include="third_party\imgui\imgui.cpp" />
@@ -34,6 +33,7 @@
   <ItemGroup>
     <Text Include="resource\nestest.log" />
     <Text Include="resource\nestest.txt" />
+    <Text Include="third_party\imguifiledialog\CMakeLists.txt" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="header\bus.h" />
@@ -41,8 +41,9 @@
     <ClInclude Include="header\cpu.h" />
     <ClInclude Include="header\definitions.h" />
     <ClInclude Include="header\instruction.h" />
-    <ClInclude Include="header\memory.h" />
     <ClInclude Include="header\utility.h" />
+    <ClInclude Include="third_party\imguifiledialog\ImGuiFileDialog.h" />
+    <ClInclude Include="third_party\imguifiledialog\ImGuiFileDialogConfig.h" />
     <ClInclude Include="third_party\imgui\backends\imgui_impl_opengl3.h" />
     <ClInclude Include="third_party\imgui\backends\imgui_impl_opengl3_loader.h" />
     <ClInclude Include="third_party\imgui\backends\imgui_impl_sdl2.h" />
@@ -52,6 +53,11 @@
     <ClInclude Include="third_party\imgui\imstb_rectpack.h" />
     <ClInclude Include="third_party\imgui\imstb_textedit.h" />
     <ClInclude Include="third_party\imgui\imstb_truetype.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="third_party\imguifiledialog\Documentation.md" />
+    <None Include="third_party\imguifiledialog\LICENSE" />
+    <None Include="third_party\imguifiledialog\README.md" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
