@@ -324,7 +324,10 @@ int main(int argc, char* argv[]) {
 
 void rom_window(_gui_context::_rom* ctx, cpu* cpu) {
 
-	if (!ImGui::Begin("Rom", nullptr)) {
+	ImGui::SetNextWindowSize(
+		ImVec2{ (ctx->show_chr || ctx->show_prg) ? 860.f : 300.f, 275.f}
+	);
+	if (!ImGui::Begin("Rom", nullptr, ImGuiWindowFlags_NoResize)) {
 		ImGui::End();
 		return;
 	}
@@ -338,7 +341,7 @@ void rom_window(_gui_context::_rom* ctx, cpu* cpu) {
 	if (ImGuiFileDialog::Instance()->Display("choose-file")) {
 		if (ImGuiFileDialog::Instance()->IsOk()) {
 			std::string s = ImGuiFileDialog::Instance()->GetFilePathName();
-			ctx->game_path_loaded = std::filesystem::path(s);
+			ctx->game_path_opened = std::filesystem::path(s);
 			std::vector<u8> x = read_file(s);
 			ctx->game_opened = new cartridge(x);
 			ctx->inserted = true;
@@ -352,7 +355,7 @@ void rom_window(_gui_context::_rom* ctx, cpu* cpu) {
 		ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine();
 		if (ImGui::Button("Load")) {
 			ctx->game_loaded = new cartridge(*ctx->game_opened);
-			ctx->game_path_loaded = ctx->game_path_loaded;
+			ctx->game_path_loaded = ctx->game_path_opened;
 			cpu->load(ctx->game_loaded);
 			
 			cpu->reset();
@@ -480,6 +483,7 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 		if (ImGui::Button("Reset")) {
 			CPU->reset();
 			ctx->has_started = false;
+			update_cpu_registers(ctx, CPU);
 		}
 	}
 	else {

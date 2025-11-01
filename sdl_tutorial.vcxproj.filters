@@ -118,6 +118,9 @@
     <ClInclude Include="third_party\imguifiledialog\ImGuiFileDialogConfig.h">
       <Filter>Header Files\imguifiledialog</Filter>
     </ClInclude>
+    <ClInclude Include="header\interrupt.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="third_party\imguifiledialog\Documentation.md">

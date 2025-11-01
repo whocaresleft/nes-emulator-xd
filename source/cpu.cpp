@@ -198,10 +198,8 @@ void cpu::rol_accumulator (const addressing_mode mode) {
 	this->set_a(value);
 }
 void cpu::brk (const addressing_mode mode) {
-	//this->push_u16(++this->pc);
-	//this->push_u8(this->p | F_BREAK);
-	//this->set_interrupt_disable(true);
-	//this->pc = this->read_u16(0xFFFE);
+	this->pc++;
+	this->interrupt(&interrupts::brk_interrupt);
 }
 void cpu::bcc (const addressing_mode mode) {
 	this->branch(!this->get_carry());
@@ -252,7 +250,7 @@ void cpu::cpy (const addressing_mode mode) {
 	this->compare(mode, this->y);
 }
 void cpu::plp (const addressing_mode mode) {
-	this->p = this->pop_u8() & !F_BREAK;
+	this->p = this->pop_u8() & ~(F_BREAK | F_GHOST);
 }
 void cpu::rla (const addressing_mode mode) {
 	u16 address = (this->*mode.get_address)(this->pc).first;
@@ -314,7 +312,7 @@ void cpu::adc (const addressing_mode mode) {
 	if (pair.second) this->tick(1);
 }
 void cpu::php (const addressing_mode mode) {
-	this->push_u8(this->p | F_BREAK);
+	this->push_u8(this->p | F_BREAK | F_GHOST);
 }
 void cpu::eor (const addressing_mode mode) {
 	std::pair<u16, bool> pair = (this->*mode.get_address)(this->pc);
@@ -465,8 +463,7 @@ void cpu::lda (const addressing_mode mode) {
 	if (pair.second) this->tick(1);
 }
 void cpu::rti (const addressing_mode mode) {
-	this->p = this->pop_u8();
-	this->set_break(false);
+	this->p = this->pop_u8() & ~(F_BREAK | F_GHOST); 
 	this->pc = this->pop_u16();
 }
 void cpu::tas (const addressing_mode mode) {

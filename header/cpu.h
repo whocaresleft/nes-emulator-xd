@@ -3,7 +3,7 @@
 
 #include "bus.h"
 #include <string>
-
+#include "interrupt.h"
 #include <iostream>
 #include <mutex>
 #include <condition_variable>
@@ -14,7 +14,6 @@
 
 struct instruction;
 struct addressing_mode;
-
 
 class cpu
 {
@@ -81,6 +80,7 @@ private:
 		this->set_negative(0_u8 != (value & 0b10000000));
 		return;
 	}
+
 public:
 	
 	std::pair<u16, bool> get_absolute_address(const u16 address) const;
@@ -180,18 +180,19 @@ public:
 		opcode(0x00_u8),
 		decoded(nullptr),
 
-		pc(0x8000_u16),
+		pc(0x0000_u16),
 		sp(STACK_RESET),
 		a(0x00_u8),
 		x(0x00_u8),
 		y(0x00_u8),
-		p(0x00_u8 | F_INTERRUPT_DISABLE | F_GHOST),
+		p(0x00_u8 | F_INTERRUPT_DISABLE | F_BREAK | F_GHOST),
 		cycles(7_usize),
 		halted(false),
 		paused(true),
 
 		cpu_bus()
 	{
+		this->pc = 0xc000; // for testnes
 		//this->pc = this->read_u16(0xFFFC);
 	}
 	cpu(cpu& to_copy) = delete;
@@ -204,16 +205,16 @@ public:
 	void reset() {
 		this->opcode = 0x00_u8;
 		this->decoded = nullptr;
-		this->sp = STACK_RESET;
-		this->a = 0x00_u8;
-		this->x = 0x00_u8;
-		this->y = 0x00_u8;
-		this->p = 0x00_u8 | F_INTERRUPT_DISABLE | F_GHOST;
+		this->sp -= 3;
+		//this->a = 0x00_u8;
+		//this->x = 0x00_u8;
+		//this->y = 0x00_u8;
+		this->p |= F_INTERRUPT_DISABLE;
 		this->cycles = 7_usize;
 		this->halted = false;
 		this->paused = true;
 		//this->pc = this->read_u16(0xFFFC_u16);
-		this->pc = 0xC000;
+		this->pc = 0xC000; // for testnes
 	}
 
 	u8 read_u8(const u16 address) const { return this->cpu_bus.read_u8(address); }
@@ -298,6 +299,17 @@ public:
 	}
 	void decode();
 	void execute();
+
+	void interrupt(const interrupt *cpu_int) {
+		this->push_u16(this->pc);
+		this->push_u8(this->p | F_GHOST | (cpu_int->b_g_mask & F_BREAK));
+		this->set_interrupt_disable(true);
+		this->tick(cpu_int->cpu_cycles);
+		this->pc = this->read_u16(cpu_int->vector_address);
+	}
+
+	void handle_nmi() { this->interrupt(&interrupts::nmi_interrupt); }
+	void handle_irq() { this->interrupt(&interrupts::irq_interrupt); }
 };
 
 #include "instruction.h"

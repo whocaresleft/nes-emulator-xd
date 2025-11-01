@@ -42,4 +42,5 @@ typedef struct instruction {
 	void (cpu::* handler)(const addressing_mode mode);
 } instruction;
 
+
 #endif

@@ -6,7 +6,7 @@
 #include <iterator>
 #include <filesystem>
 #include <cstdint>
-std::vector<uint8_t> read_file(const std::string& path) {
+std::vector<uint8_t> static read_file(const std::string& path) {
 	std::ifstream file(path, std::ios::binary | std::ios::ate);
 	if (!file) throw std::runtime_error("Cannot open file");
 
