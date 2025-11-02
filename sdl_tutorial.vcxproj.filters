@@ -121,6 +121,12 @@
     <ClInclude Include="header\interrupt.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="header\ppu.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="header\ppu_registers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="third_party\imguifiledialog\Documentation.md">

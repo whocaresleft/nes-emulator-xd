@@ -31,7 +31,7 @@ static const char* ADDRESSING_MODE_NAMES[] = {
 
 typedef struct addressing_mode {
 	const u8 length;
-	std::pair<u16, bool>(cpu::*get_address)(const u16 address) const;
+	std::pair<u16, bool>(cpu::*get_address)(const u16 address);
 } addressing_mode;
 
 typedef struct instruction {

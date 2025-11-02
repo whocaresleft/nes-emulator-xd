@@ -1,28 +1,28 @@
 #include "../header/cpu.h"
 
 
-std::pair<u16, bool> cpu::get_absolute_address(u16 address) const {
+std::pair<u16, bool> cpu::get_absolute_address(u16 address) {
 	return std::pair<u16, bool> { this->read_u16(address), false };
 }
-std::pair<u16, bool> cpu::get_absolute_x_address(u16 address) const {
+std::pair<u16, bool> cpu::get_absolute_x_address(u16 address) {
 	u16 base = this->read_u16(address);
 	u16 addr = base + static_cast<u16>(this->x);
 	return std::pair<u16, bool> { addr, (base & 0xFF00) != (addr & 0xFF00) };
 }
-std::pair<u16, bool> cpu::get_absolute_y_address(u16 address) const {
+std::pair<u16, bool> cpu::get_absolute_y_address(u16 address) {
 	u16 base = this->read_u16(address);
 	u16 addr = base + static_cast<u16>(this->y);
 	return std::pair<u16, bool> { addr, (base & 0xFF00) != (addr & 0xFF00) };
 }
-std::pair<u16, bool> cpu::get_immediate_address(u16 address) const {
+std::pair<u16, bool> cpu::get_immediate_address(u16 address) {
 	return std::pair<u16, bool> { address, false };
 }
-std::pair<u16, bool> cpu::get_indirect_x_address(u16 address) const {
+std::pair<u16, bool> cpu::get_indirect_x_address(u16 address) {
 	u8 base = this->read_u8(address);
 	u8 ptr = static_cast<u16>(base + this->x);
 	return std::pair<u16, bool> { static_cast<u16>(this->read_u8(ptr)) | (static_cast<u16>(this->read_u8(ptr + 1_u16)) << 8), false };
 }
-std::pair<u16, bool> cpu::get_indirect_y_address(u16 address) const {
+std::pair<u16, bool> cpu::get_indirect_y_address(u16 address) {
 	u8 base = static_cast<u16>(this->read_u8(address));
 	u8 lo = static_cast<u16>(this->read_u8(base));
 	u8 hi = static_cast<u16>(this->read_u8(base + 1_u16));
@@ -33,16 +33,16 @@ std::pair<u16, bool> cpu::get_indirect_y_address(u16 address) const {
 		(deref_base & 0xFF00) != (deref & 0xFF00)
 	};
 }
-std::pair<u16, bool> cpu::get_zero_page_address(u16 address) const {
+std::pair<u16, bool> cpu::get_zero_page_address(u16 address) {
 	return std::pair<u16, bool> { static_cast<u16>(this->read_u8(address)), false };
 }
-std::pair<u16, bool> cpu::get_zero_page_x_address(u16 address) const {
+std::pair<u16, bool> cpu::get_zero_page_x_address(u16 address) {
 	return std::pair<u16, bool> {
 		static_cast<u16>(this->read_u8(address) + this->x),
 		false 
 	};
 }
-std::pair<u16, bool> cpu::get_zero_page_y_address(u16 address) const {
+std::pair<u16, bool> cpu::get_zero_page_y_address(u16 address) {
 	return std::pair<u16, bool> {
 		static_cast<u16>(this->read_u8(address) + this->y),
 		false
@@ -543,7 +543,7 @@ void cpu::execute() {
 #include <string>
 #include <sstream>
 #include <iomanip>
-std::string cpu::trace() const {
+std::string cpu::trace() {
 
 	u16 pc = this->pc;
 	u8 opcode = this->read_u8(pc);

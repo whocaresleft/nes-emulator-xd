@@ -83,15 +83,15 @@ private:
 
 public:
 	
-	std::pair<u16, bool> get_absolute_address(const u16 address) const;
-	std::pair<u16, bool> get_absolute_x_address(const u16 address) const;
-	std::pair<u16, bool> get_absolute_y_address(const u16 address) const;
-	std::pair<u16, bool> get_immediate_address(const u16 address) const;
-	std::pair<u16, bool> get_indirect_x_address(const u16 address) const;
-	std::pair<u16, bool> get_indirect_y_address(const u16 address) const;
-	std::pair<u16, bool> get_zero_page_address(const u16 address) const;
-	std::pair<u16, bool> get_zero_page_x_address(const u16 address) const;
-	std::pair<u16, bool> get_zero_page_y_address(const u16 address) const;
+	std::pair<u16, bool> get_absolute_address(const u16 address);
+	std::pair<u16, bool> get_absolute_x_address(const u16 address);
+	std::pair<u16, bool> get_absolute_y_address(const u16 address);
+	std::pair<u16, bool> get_immediate_address(const u16 address);
+	std::pair<u16, bool> get_indirect_x_address(const u16 address);
+	std::pair<u16, bool> get_indirect_y_address(const u16 address);
+	std::pair<u16, bool> get_zero_page_address(const u16 address);
+	std::pair<u16, bool> get_zero_page_x_address(const u16 address);
+	std::pair<u16, bool> get_zero_page_y_address(const u16 address);
 
 	void ldy(const addressing_mode mode);
 	void axs(const addressing_mode mode);
@@ -217,9 +217,9 @@ public:
 		this->pc = 0xC000; // for testnes
 	}
 
-	u8 read_u8(const u16 address) const { return this->cpu_bus.read_u8(address); }
+	u8 read_u8(const u16 address) { return this->cpu_bus.read_u8(address); }
 	void write_u8(const u16 address, const u8 value) { this->cpu_bus.write_u8(address, value); }
-	u16 read_u16(const u16 address) const { return this->cpu_bus.read_u16(address); }
+	u16 read_u16(const u16 address) { return this->cpu_bus.read_u16(address); }
 	void write_u16(const u16 address, const u16 value) { this->cpu_bus.write_u16(address, value); }
 
 	u8 pop_u8() { return this->read_u8(STACK | static_cast<u16>(++this->sp)); }
@@ -289,7 +289,7 @@ public:
 		cv.notify_one();
 	}
 
-	std::string trace() const;
+	std::string trace();
 
 	~cpu() { this->halted.store(true); }
 

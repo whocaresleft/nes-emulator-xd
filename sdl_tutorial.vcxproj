@@ -42,6 +42,8 @@
     <ClInclude Include="header\definitions.h" />
     <ClInclude Include="header\instruction.h" />
     <ClInclude Include="header\interrupt.h" />
+    <ClInclude Include="header\ppu.h" />
+    <ClInclude Include="header\ppu_registers.h" />
     <ClInclude Include="header\utility.h" />
     <ClInclude Include="third_party\imguifiledialog\ImGuiFileDialog.h" />
     <ClInclude Include="third_party\imguifiledialog\ImGuiFileDialogConfig.h" />
