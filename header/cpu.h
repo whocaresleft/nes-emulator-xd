@@ -14,6 +14,7 @@
 
 struct instruction;
 struct addressing_mode;
+class ppu;
 
 class cpu
 {
@@ -44,6 +45,7 @@ public:
 	bool rom_loaded;
 	const instruction* decoded;
 	std::span<u8> get_wram() { return this->cpu_bus.get_wram(); }
+	ppu* get_ppu() { return this->cpu_bus.get_ppu(); }
 private:
 
 	std::mutex mtx;

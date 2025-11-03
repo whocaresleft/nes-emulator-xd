@@ -5,7 +5,6 @@
 
 typedef struct ppu_ctrl {
 
-private:
 	constexpr static u8 nmi_enable				= 0b10000000_u8;
 	constexpr static u8 master_slave			= 0b01000000_u8;
 	constexpr static u8 sprite_height		    = 0b00100000_u8;
@@ -13,7 +12,8 @@ private:
 	constexpr static u8 sprite_tile_select		= 0b00001000_u8;
 	constexpr static u8 increment_mode			= 0b00000100_u8;	
 	constexpr static u8 nametable_select		= 0b00000011_u8;
-
+	
+private:
 	constexpr static u16 nametable_offsets[4] = { 0x2000, 0x2400, 0x2800, 0x2C00 };
 	constexpr static u8 vram_address_increments[2] = { 1, 32 };
 	constexpr static u16 pattern_addresses[2] = { 0x0000, 0x1000 };
@@ -36,6 +36,7 @@ public:
 	bool generate_nmi() const { return this->bits & nmi_enable; }
 
 	void update(const u8 bits) { this->bits = bits; }
+	u8 snapshot() const { return this->bits; }
 } ppu_ctrl;
 
 typedef struct ppu_scroll {
@@ -68,6 +69,7 @@ public:
 	u8 color_enhancement_r_g_b() const { return (this->bits & enhance_blue_green_red) >> 5; }
 
 	void update(const u8 bits) { this->bits = bits;}
+	u8 snapshot() const { return this->bits; }
 } ppu_mask;
 
 

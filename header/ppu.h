@@ -25,10 +25,9 @@ private:
 	bool address_latch;
 
 	u8 oam_address;
-	u8 ppu_data_buffer;
 	u8 data_buffer;
 
-	enum cartridge::mirroring mirroring_type;
+	enum mirroring mirroring_type;
 	std::span<u8> chr_rom;
 	std::array<u8, 32> palette_table;
 	std::array<u8, 256> oam_memory;
@@ -41,7 +40,7 @@ private:
 		return vram_index - MIRRORED_ADDRESSES[this->mirroring_type][name_table];
 	}
 
-	u8 read_ppu_bus(const u16 address) {
+	u8 read_ppu_bus(const u16 address) const {
 		if (address <= 0x1FFF) { return this->chr_rom[address]; }
 		if (address <= 0x2FFF) { return this->vram[this->mirror_address(address)]; }
 		return 0;
@@ -90,9 +89,9 @@ private:
 			this->write_ppu_bus(address, data);
 		}
 		else {
-			u16 palette_address = address & 0x001F;
-			if (palette_address == 0x10 || palette_address == 0x14 || palette_address == 0x18 || palette_address == 0x1C) {
-				palette_address -= 0x10;
+			u16 palette_address = address & 0x000F;
+			if ((palette_address & 0x0003) == 0) {
+				palette_address = 0x0000;
 			}
 			this->palette_table[palette_address] = data;
 		}
@@ -121,9 +120,9 @@ private:
 			this->data_buffer = data_from_vram;
 		}
 		else {
-			u16 palette_address = address & 0x001F;
-			if (palette_address == 0x10 || palette_address == 0x14 || palette_address == 0x18 || palette_address == 0x1C) {
-				palette_address -= 0x10;
+			u16 palette_address = address & 0x000F;
+			if ((palette_address & 0x0003) == 0) {
+				palette_address = 0x0000;
 			}
 			data_to_return = this->palette_table[palette_address];
 			this->data_buffer = this->read_ppu_bus(address - 0x1000);
@@ -143,16 +142,15 @@ public:
 		mask(),
 		status(),
 		oam_address(0),
-		ppu_data_buffer(0),
 		data_buffer(0),
 		chr_rom({}),
 		oam_memory({}),
 		vram({}),
 		palette_table({}),
-		mirroring_type(cartridge::mirroring::vertical)
+		mirroring_type(mirroring::vertical)
 	{}
 
-	void load(cartridge* rom) { this->chr_rom = std::span<u8>(rom->chr_rom); this->mirroring_type = rom->screen_mirroring; }
+	void load(cartridge* rom) { this->chr_rom = rom->get_chr_rom(); this->mirroring_type = rom->get_mirroring(); }
 	void tick(usize cycles) { this->cycles += cycles; }
 
 	void write(u8 address, u8 data) {
@@ -176,6 +174,23 @@ public:
 		default: return last_bus_value;
 		}
 	}
+
+	std::span<u8> get_oam_memory() { return std::span<u8>(this->oam_memory); }
+	std::span<u8> get_color_palette() { return std::span<u8>(this->palette_table); }
+	std::span<u8> get_vram() { return std::span<u8>(this->vram); }
+
+	usize get_cycles() { return this->cycles; }
+	ppu_ctrl get_control() { return this->control; }
+	ppu_mask get_mask() { return this->mask; }
+	ppu_status get_status() { return this->status; }
+
+	u16 get_vram_address() { return this->vram_address; }
+	u16 get_vram_address_temp() { return this->vram_address_temp; }
+	u8 get_fine_x() { return this->fine_x; }
+	bool get_address_latch() { return this->address_latch; }
+
+	u8 get_oam_address() { return this->oam_address; }
+	u8 get_data_buffer() { return this->data_buffer; }
 };
 
 #endif

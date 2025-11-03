@@ -42,6 +42,7 @@
     <ClInclude Include="header\definitions.h" />
     <ClInclude Include="header\instruction.h" />
     <ClInclude Include="header\interrupt.h" />
+    <ClInclude Include="header\palette.h" />
     <ClInclude Include="header\ppu.h" />
     <ClInclude Include="header\ppu_registers.h" />
     <ClInclude Include="header\utility.h" />

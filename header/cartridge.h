@@ -6,9 +6,15 @@
 #include <algorithm>
 #include "definitions.h"
 
+typedef enum mirroring {
+	vertical = 0_u8,
+	horizontal = 1_u8,
+	four_screen = 2_u8
+} mirroring;
+
 class cartridge {
 
-public:
+private:
 	constexpr static const char* SCREEN_MIRRORING_NAMES[3] = {
 		"Vertical", "Horizontal", "Four Screen"
 	};
@@ -16,13 +22,10 @@ public:
 	std::vector<u8> prg_rom;
 	std::vector<u8> chr_rom;
 	u8 mapper;
-	enum mirroring {
-		vertical = 0_u8,
-		horizontal = 1_u8,
-		four_screen = 2_u8
-	} screen_mirroring;
+	enum mirroring screen_mirroring;
 
 
+public:
 	cartridge(std::vector<u8>& raw) :
 		mapper(0),
 		screen_mirroring(mirroring::vertical),
@@ -70,6 +73,11 @@ public:
 		chr_rom(to_copy.chr_rom)
 	{}
 	cartridge(const cartridge&& to_move) noexcept = delete;
+
+	std::span<u8> get_prg_rom() { return std::span<u8>(this->prg_rom); }
+	std::span<u8> get_chr_rom() { return std::span<u8>(this->chr_rom); }
+	u8 get_mapper() { return this->mapper;  }
+	enum mirroring get_mirroring() { return this->screen_mirroring; }
 
 	~cartridge() { }
 };

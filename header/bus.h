@@ -15,7 +15,7 @@ private:
 	usize mirror_index;
 	usize cycles;
 
-	ppu ppu;
+	ppu _ppu;
 
 	u8 last_read;
 
@@ -26,23 +26,23 @@ public:
 		cycles(0),
 		mirror_index(0),
 		last_read(0),
-		ppu()
+		_ppu()
 	{ }
 	bus(bus& to_copy) = delete;
 	bus(bus&& to_move) noexcept = delete;
 	~bus() {}
 
 	void load(cartridge* rom) { 
-		this->prg_rom = std::span<u8>(rom->prg_rom); 
+		this->prg_rom = rom->get_prg_rom(); 
 		this->mirror_index = (this->prg_rom.size() == 0x4000) ? 0_usize : 1_usize;
-		this->ppu.load(rom);
+		this->_ppu.load(rom);
 	}
-	void tick(usize cycles) { this->cycles += cycles; this->ppu.tick(cycles * 3); }
+	void tick(usize cycles) { this->cycles += cycles; this->_ppu.tick(cycles * 3); }
 
 	u8 read_u8(const u16 address) {
 		if (address >= 0x8000) { this->last_read = this->prg_rom[(address - 0x8000) & bus::MIRRORS_PRG[this->mirror_index]]; }
 		else if (address <= 0x1FFF) { this->last_read = this->cpu_wram[address & 0x07FF]; }
-		else if (address <= 0x3FFF) { this->last_read = this->ppu.read(address & 7, this->last_read); } // [ppu, update or nah
+		else if (address <= 0x3FFF) { this->last_read = this->_ppu.read(address & 7, this->last_read); } // [ppu, update or nah
 		else if (address <= 0x4017) { this->last_read = 0; } // apu and io
 		else if (address >= 0x6000 && address <= 0x7FFF) { this->last_read = 0; } // expansion rom
 
@@ -50,7 +50,7 @@ public:
 	}
 	void write_u8(const u16 address, const u8 value) {
 		if (address <= 0x1FFF) { this->cpu_wram[address & 0x07FF] = value; }
-		else if (address <= 0x3FFF) { return; } // ppu
+		else if (address <= 0x3FFF) { this->_ppu.write(address & 7, value); } // ppu
 		else if (address <= 0x4017) { return; } // apu and io
 		else if (address >= 0x6000 && address <= 0x7FFF) { return; } // expansion rom
 	}
@@ -63,6 +63,7 @@ public:
 	}
 
 	const std::span<u8> get_wram() { return std::span<u8>(cpu_wram); }
+	ppu* get_ppu() { return &this->_ppu; }
 };
 
 #endif
