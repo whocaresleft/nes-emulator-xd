@@ -14,11 +14,12 @@ typedef enum mirroring {
 
 class cartridge {
 
-private:
+public:
 	constexpr static const char* SCREEN_MIRRORING_NAMES[3] = {
 		"Vertical", "Horizontal", "Four Screen"
 	};
 
+private:
 	std::vector<u8> prg_rom;
 	std::vector<u8> chr_rom;
 	u8 mapper;

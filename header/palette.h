@@ -2,10 +2,20 @@
 #define PALETTE__H
 
 #include "definitions.h"
+#include "../third_party/imgui/imgui.h"
 
 typedef struct color_rgb {
 
     u8 r, g, b;
+
+    operator ImVec4() const {
+        return ImVec4(
+            static_cast<float>(this->r) / 255.f,
+            static_cast<float>(this->g) / 255.f,
+            static_cast<float>(this->b) / 255.f,
+            1.0f
+        );
+    }
 } color_rgb;
 
 constexpr static std::array<color_rgb, 64> NES_HARDWARE_PALETTE = {

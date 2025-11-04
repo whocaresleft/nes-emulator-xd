@@ -19,8 +19,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="source\bus.cpp" />
     <ClCompile Include="source\cpu.cpp" />
     <ClCompile Include="source\main.cpp" />
+    <ClCompile Include="source\ppu.cpp" />
     <ClCompile Include="third_party\imguifiledialog\ImGuiFileDialog.cpp" />
     <ClCompile Include="third_party\imgui\backends\imgui_impl_opengl3.cpp" />
     <ClCompile Include="third_party\imgui\backends\imgui_impl_sdl2.cpp" />

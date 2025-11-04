@@ -54,6 +54,12 @@
     <ClCompile Include="third_party\imguifiledialog\ImGuiFileDialog.cpp">
       <Filter>Header Files\imguifiledialog</Filter>
     </ClCompile>
+    <ClCompile Include="source\bus.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\ppu.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="resource\nestest.log">

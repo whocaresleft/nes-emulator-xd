@@ -66,6 +66,8 @@ public:
 	bool show_sprites_in_leftmost_8px() const { return this->bits & show_sprites_left; }
 	bool is_background_rendering_enabled() const { return this->bits & enable_background_rendering; }
 	bool is_sprite_rendering_enabled() const { return this->bits & enable_sprite_rendering; }
+	
+	bool is_rendering_enabled() const { return this->bits & (enable_background_rendering | enable_sprite_rendering); }
 	u8 color_enhancement_r_g_b() const { return (this->bits & enhance_blue_green_red) >> 5; }
 
 	void update(const u8 bits) { this->bits = bits;}
@@ -101,6 +103,7 @@ public:
 		else this->bits &= ~sprite_overflow;
 	}
 
+	void update(const u8 data) { this->bits = 0b11100000 & data; }
 	bool is_in_vblank() const { return this->bits & vblank; }
 	u8 snapshot() const { return this->bits; }
 

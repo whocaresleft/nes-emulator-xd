@@ -14,7 +14,6 @@
 
 struct instruction;
 struct addressing_mode;
-class ppu;
 
 class cpu
 {
@@ -31,7 +30,6 @@ private:
 	constexpr static u8 F_OVERFLOW				= 0b01000000;
 	constexpr static u8 F_NEGATIVE				= 0b10000000;
 
-public:
 	u8 a, p, sp, x, y;
 	u16 pc;
 
@@ -41,20 +39,18 @@ public:
 
 	std::atomic<bool> halted;
 	std::atomic<bool> paused;
+	std::atomic<bool> nmi_requested;
 
 	bool rom_loaded;
 	const instruction* decoded;
-	std::span<u8> get_wram() { return this->cpu_bus.get_wram(); }
-	ppu* get_ppu() { return this->cpu_bus.get_ppu(); }
-private:
 
 	std::mutex mtx;
 	std::condition_variable cv;
 	std::jthread runner;
 
-	bus cpu_bus;
+	bus* cpu_bus;
 
-	void tick(const usize cycles) { this->cycles += cycles; }
+	void tick(const usize cycles) { this->cycles += cycles; this->cpu_bus->tick(cycles); }
 
 	void set_a(const u8 value) { this->a = value; this->update_negative_zero(this->a); }
 	void add_to_a(const u8 value);
@@ -84,7 +80,23 @@ private:
 	}
 
 public:
-	
+	std::span<u8> get_wram() { return this->cpu_bus->get_wram(); }
+	u8 get_a() const { return this->a; }
+	u8 get_x() const { return this->x; }
+	u8 get_y() const { return this->y; }
+	u8 get_p() const { return this->p; }
+	u16 get_pc() const { return this->pc; }
+	u8 get_sp() const { return this->sp; }
+	u8 get_opcode() const { return this->opcode; }
+	usize get_cycles() const { return this->cycles; }
+	bool get_halted() const { return this->halted.load(); }
+	bool get_paused() const { return this->paused.load(); }
+	bool get_rom_loaded() const { return this->rom_loaded; }
+	const instruction* get_decoded() { return this->decoded; }
+
+	void request_nmi() { this->nmi_requested.store(true); }
+	bool is_nmi_requested() const { return this->nmi_requested.load(); }
+
 	std::pair<u16, bool> get_absolute_address(const u16 address);
 	std::pair<u16, bool> get_absolute_x_address(const u16 address);
 	std::pair<u16, bool> get_absolute_y_address(const u16 address);
@@ -191,8 +203,9 @@ public:
 		cycles(7_usize),
 		halted(false),
 		paused(true),
+		nmi_requested(0),
 
-		cpu_bus()
+		cpu_bus(nullptr)
 	{
 		this->pc = 0xc000; // for testnes
 		//this->pc = this->read_u16(0xFFFC);
@@ -200,8 +213,10 @@ public:
 	cpu(cpu& to_copy) = delete;
 	cpu(cpu&& to_move) noexcept = delete;
 
+	void connect(bus* cpu_bus) { this->cpu_bus = cpu_bus; }
+
 	void load(cartridge* rom) { 
-		this->cpu_bus.load(rom);
+		this->cpu_bus->load(rom);
 		this->rom_loaded = true;
 	}
 	void reset() {
@@ -219,10 +234,10 @@ public:
 		this->pc = 0xC000; // for testnes
 	}
 
-	u8 read_u8(const u16 address) { return this->cpu_bus.read_u8(address); }
-	void write_u8(const u16 address, const u8 value) { this->cpu_bus.write_u8(address, value); }
-	u16 read_u16(const u16 address) { return this->cpu_bus.read_u16(address); }
-	void write_u16(const u16 address, const u16 value) { this->cpu_bus.write_u16(address, value); }
+	u8 read_u8(const u16 address) { return this->cpu_bus->read_u8(address); }
+	void write_u8(const u16 address, const u8 value) { this->cpu_bus->write_u8(address, value); }
+	u16 read_u16(const u16 address) { return this->cpu_bus->read_u16(address); }
+	void write_u16(const u16 address, const u16 value) { this->cpu_bus->write_u16(address, value); }
 
 	u8 pop_u8() { return this->read_u8(STACK | static_cast<u16>(++this->sp)); }
 	u16 pop_u16() { return static_cast<u16>(this->pop_u8()) | static_cast<u16>((this->pop_u8()) << 8); }
@@ -240,6 +255,7 @@ public:
 		while (!this->halted) {
 			first(*this);
 
+			//if (this->nmi_requested.load()) this->handle_nmi();
 			this->fetch();
 			this->decode();
 			this->execute();
@@ -268,6 +284,7 @@ public:
 				if (st.stop_requested()) break;
 				
 				first(*this);
+				if (this->nmi_requested.load()) this->handle_nmi();
 				this->fetch();
 				this->decode();
 				this->execute();

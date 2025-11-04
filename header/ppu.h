@@ -4,10 +4,14 @@
 #include "definitions.h"
 #include "ppu_registers.h"
 #include "cartridge.h"
+#include <iostream>
+class bus;
 
 class ppu {
 
 private:
+
+	void request_nmi();
 
 	static constexpr u16 MIRRORED_ADDRESSES[3][4] = {
 		{ 0x0000, 0x0000, 0x0800, 0x0800 }, // Vertical
@@ -15,6 +19,7 @@ private:
 		{ 0x0000, 0x0000, 0x0000, 0x0000 }  // Four Screen
 	};
 
+	usize scanlines;
 	usize cycles;
 	ppu_ctrl control;
 	ppu_mask mask;
@@ -26,6 +31,8 @@ private:
 
 	u8 oam_address;
 	u8 data_buffer;
+
+	bus* cpu_bus;
 
 	enum mirroring mirroring_type;
 	std::span<u8> chr_rom;
@@ -54,7 +61,7 @@ private:
 		this->control.update(data);
 		bool is_nmi_enabled = this->control.generate_nmi();
 		if (this->status.is_in_vblank() && !was_nmi_enabled && is_nmi_enabled) {
-			// GENERATE NMI
+			this->request_nmi();
 		}
 	}
 	void write_mask(const u8 data) { this->mask.update(data); }
@@ -129,7 +136,28 @@ private:
 		}
 		return data_to_return;
 	}
+	void update_scanline() {
+		this->cycles -= 341;
 
+		this->scanlines++;
+
+		if (this->scanlines <= (239 + 1)) { // draw
+			this->control.update(0b10000000);
+			// this->draw_line(this->scanlines - 1) // index is current -1 because f shift
+		}
+		else if (this->scanlines == (241 + 1)) { // Generate NMI
+			this->status.set_vblank(true);
+			if (this->control.generate_nmi()) {
+				this->request_nmi();
+			}
+		}
+		else if (this->scanlines == (261 + 1)) { // NMI over if still on
+			this->status.update(0);
+			if (this->mask.is_rendering_enabled())
+				this->vram_address = this->vram_address_temp;
+			this->scanlines = 0;
+		}
+	}
 
 public:
 	ppu() : 
@@ -146,12 +174,21 @@ public:
 		chr_rom({}),
 		oam_memory({}),
 		vram({}),
+		scanlines(0),
 		palette_table({}),
-		mirroring_type(mirroring::vertical)
+		mirroring_type(mirroring::vertical),
+		cpu_bus(nullptr)
 	{}
 
+	void connect(bus* cpu_bus) { this->cpu_bus = cpu_bus; }
+
 	void load(cartridge* rom) { this->chr_rom = rom->get_chr_rom(); this->mirroring_type = rom->get_mirroring(); }
-	void tick(usize cycles) { this->cycles += cycles; }
+	void tick(usize cycles) {
+		this->cycles += cycles;
+		while (this->cycles >= 341) {
+			this->update_scanline();
+		}
+	}
 
 	void write(u8 address, u8 data) {
 		switch (address & 7) {
@@ -180,6 +217,7 @@ public:
 	std::span<u8> get_vram() { return std::span<u8>(this->vram); }
 
 	usize get_cycles() { return this->cycles; }
+	usize get_scanlines() { return this->scanlines; }
 	ppu_ctrl get_control() { return this->control; }
 	ppu_mask get_mask() { return this->mask; }
 	ppu_status get_status() { return this->status; }
