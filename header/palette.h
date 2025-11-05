@@ -4,88 +4,23 @@
 #include "definitions.h"
 #include "../third_party/imgui/imgui.h"
 
-typedef struct color_rgb {
-
-    u8 r, g, b;
-
-    operator ImVec4() const {
-        return ImVec4(
-            static_cast<float>(this->r) / 255.f,
-            static_cast<float>(this->g) / 255.f,
-            static_cast<float>(this->b) / 255.f,
-            1.0f
-        );
-    }
-} color_rgb;
-
-constexpr static std::array<color_rgb, 64> NES_HARDWARE_PALETTE = {
-    color_rgb{ 84,  84,  84},  
-    color_rgb{  0,  30, 116},  
-    color_rgb{  8,  16, 144},  
-    color_rgb{ 48,   0, 136},  
-    color_rgb{ 68,   0, 100},  
-    color_rgb{ 92,   0,  48},  
-    color_rgb{ 84,   4,   0},  
-    color_rgb{ 60,  24,   0},  
-    color_rgb{ 32,  42,   0},  
-    color_rgb{  8,  58,   0},  
-    color_rgb{  0,  64,   0},  
-    color_rgb{  0,  60,   0},  
-    color_rgb{  0,  50,  60},  
-    color_rgb{  0,   0,   0},   
-    color_rgb{  0,   0,   0},  
-    color_rgb{  0,   0,   0},  
-
-    color_rgb{152, 150, 152},  
-    color_rgb{  8,  76, 196},  
-    color_rgb{ 48,  50, 236},  
-    color_rgb{ 92,  30, 228},  
-    color_rgb{136,  20, 176},  
-    color_rgb{160,  20, 100},  
-    color_rgb{152,  34,  32},  
-    color_rgb{120,  60,   0},  
-    color_rgb{ 84,  90,   0},  
-    color_rgb{ 40, 114,   0},  
-    color_rgb{  8, 124,   0},  
-    color_rgb{  0, 118,  40},  
-    color_rgb{  0, 102, 120},  
-    color_rgb{  0,   0,   0},  
-    color_rgb{  0,   0,   0},  
-    color_rgb{  0,   0,   0},  
-
-    color_rgb{236, 238, 236},  
-    color_rgb{ 76, 154, 236},  
-    color_rgb{120, 124, 236},  
-    color_rgb{176,  98, 236},  
-    color_rgb{228,  84, 236},  
-    color_rgb{236,  88, 180},  
-    color_rgb{236, 106, 100},  
-    color_rgb{212, 136,  32},  
-    color_rgb{160, 170,   0},  
-    color_rgb{116, 196,   0},  
-    color_rgb{ 76, 208,  32},  
-    color_rgb{ 56, 204, 108},  
-    color_rgb{ 56, 180, 204},  
-    color_rgb{ 60,  60,  60},  
-    color_rgb{  0,   0,   0},  
-    color_rgb{  0,   0,   0},  
-
-    color_rgb{236, 238, 236},  
-    color_rgb{168, 204, 236},  
-    color_rgb{188, 188, 236},  
-    color_rgb{212, 178, 236},  
-    color_rgb{236, 174, 236},  
-    color_rgb{236, 174, 212},  
-    color_rgb{236, 180, 176},  
-    color_rgb{228, 196, 144},  
-    color_rgb{204, 210, 120},  
-    color_rgb{180, 222, 120},  
-    color_rgb{168, 226, 144}, 
-    color_rgb{152, 226, 180},
-    color_rgb{160, 214, 228}, 
-    color_rgb{160, 162, 160}, 
-    color_rgb{  0,   0,   0}, 
-    color_rgb{  0,   0,   0} 
+constexpr static std::array<u32, 64> NES_HARDWARE_PALETTE = {
+    0xFF666666, 0xFF002A88, 0xFF1412A7, 0xFF3B00A4, 0xFF5C007E, 0xFF6E0040, 0xFF6C0600, 0xFF561D00,
+    0xFF333500, 0xFF0B4800, 0xFF005200, 0xFF004F08, 0xFF00404D, 0xFF000000, 0xFF000000, 0xFF000000,
+    0xFFADADAD, 0xFF155FD9, 0xFF4240FF, 0xFF7527FE, 0xFFA01ACC, 0xFFB71E7B, 0xFFB53120, 0xFF994E00,
+    0xFF6B6D00, 0xFF388700, 0xFF0C9300, 0xFF008F32, 0xFF007C8D, 0xFF000000, 0xFF000000, 0xFF000000,
+    0xFFFFFEFF, 0xFF64B0FF, 0xFF9290FF, 0xFFC676FF, 0xFFF36AFF, 0xFFFE6ECC, 0xFFFE8170, 0xFFEA9E22,
+    0xFFBCBE00, 0xFF88D800, 0xFF5CE430, 0xFF45E082, 0xFF48CDDE, 0xFF4F4F4F, 0xFF000000, 0xFF000000,
+    0xFFFFFEFF, 0xFFC0DFFF, 0xFFD3D2FF, 0xFFE8C8FF, 0xFFFBC2FF, 0xFFFEC4EA, 0xFFFECCC5, 0xFFF7D8A5,
+    0xFFE4E594, 0xFFCFEF96, 0xFFBDF4AB, 0xFFB3F3CC, 0xFFB5EBF2, 0xFFB8B8B8, 0xFF000000, 0xFF000000
 };
+inline ImVec4 to_imgui_color(u32 color) {
+    return ImVec4{
+        static_cast<float>((color & 0x00FF0000) >> 16) / 255.f,
+        static_cast<float>((color & 0x0000FF00) >> 8) / 255.f,
+        static_cast<float>((color & 0x000000FF) >> 0) / 255.f,
+        static_cast<float>((color & 0xFF000000) >> 24) / 255.f
+    };
+}
 
 #endif

@@ -164,22 +164,36 @@ typedef struct _gui_context {
 		{}
 	} ppu;
 
+	struct _screen {
+		bool hide;
+		GLuint canvas;
+		std::span<u32> pixel_buffer;
+		_screen() :
+			canvas(0),
+			hide(true),
+			pixel_buffer()
+		{}
+	} screen;
+
 	_gui_context() : 
 		rom(),
 		cpu(),
-		ppu()
+		ppu(),
+		screen()
 	{}
 } _gui_context;
 
 void ppu_window(_gui_context::_ppu*, ppu*);
 void rom_window(_gui_context::_rom*, cpu*);
-void cpu_window(_gui_context*, cpu*, ppu*);
+void cpu_window(_gui_context::_cpu*, cpu*);
+void screen_window(_gui_context::_screen*);
 
 inline void static gui_fetch(_gui_context::_cpu*, cpu*);
 inline void static gui_decode(_gui_context::_cpu*, cpu*);
-inline void static gui_execute(_gui_context*, cpu*, ppu*);
+inline void static gui_execute(_gui_context::_cpu*, cpu*);
 
 inline void static update_ppu_context(_gui_context::_ppu* ctx, ppu* ppu) {
+	std::cout << "IN UPDATE_CONTEXT:" << static_cast<int>(ppu->get_status().snapshot()) << std::endl;
 	ctx->cycles = ppu->get_cycles();
 	ctx->ctrl = ppu->get_control().snapshot();
 	ctx->mask = ppu->get_mask().snapshot();
@@ -211,10 +225,9 @@ inline void static update_cpu_instruction(_gui_context::_cpu* ctx, cpu* cpu) {
 		if (len > 2) ctx->opcode.operands[1] = cpu->read_u8(cpu->get_pc() + 2);
 	}
 }
-inline void static update_cpu_context(_gui_context* ctx, cpu* cpu, ppu* ppu) {
-	update_cpu_registers(&ctx->cpu, cpu);
-	update_cpu_instruction(&ctx->cpu, cpu);
-	update_ppu_context(&ctx->ppu, ppu);
+inline void static update_cpu_context(_gui_context::_cpu* ctx, cpu* cpu) {
+	update_cpu_registers(ctx, cpu);
+	update_cpu_instruction(ctx, cpu);
 }
 
 bool InputHex(const char* label, u32* value, int step = 1, int step_fast = 16, int digits = 2, ImGuiInputTextFlags flags = ImGuiInputTextFlags_CharsHexadecimal) {
@@ -255,7 +268,7 @@ int main(int argc, char* argv[]) {
 	float main_scale = ImGui_ImplSDL2_GetContentScaleForDisplay(0);
 	SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
 	SDL_Window* window = SDL_CreateWindow(
-		"AAA", 
+		"Whocaresleft's Nes Emulatxr", 
 		SDL_WINDOWPOS_CENTERED, 
 		SDL_WINDOWPOS_CENTERED,
 		static_cast<int>(900 * main_scale),
@@ -295,12 +308,29 @@ int main(int argc, char* argv[]) {
 	bool show_demo_window = true;
 	bool done = false;
 
+	std::vector<u32> pixel_buffer = std::vector<u32>(256 * 240);
+	for (auto& x : pixel_buffer) x = 0xFF000000;
+
+
+	GLuint canvas_texture;
+	glGenTextures(1, &canvas_texture);
+	glBindTexture(GL_TEXTURE_2D, canvas_texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 240, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixel_buffer.data());
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+
+	ctx->screen.canvas = canvas_texture;
+	ctx->screen.pixel_buffer = std::span<u32>(pixel_buffer);
+
 	bus* BUS = new bus();
 	cpu* CPU = new cpu();
 	ppu* PPU = new ppu();
 
 	CPU->connect(BUS);
 	PPU->connect(BUS);
+	PPU->set_pixel_buffer(pixel_buffer);
 	BUS->connect(CPU);
 	BUS->connect(PPU);
 
@@ -310,6 +340,13 @@ int main(int argc, char* argv[]) {
 	ctx->ppu.color_palette = PPU->get_color_palette();
 	ctx->ppu.vram.view = PPU->get_vram();
 	ctx->ppu.oam_memory = PPU->get_oam_memory();
+
+
+	auto ppu_ctx = &(ctx->ppu);
+
+	auto ppu_debug = [ppu_ctx](ppu& _ppu) {
+		update_ppu_context(ppu_ctx, &_ppu);
+	};
 
 	while (!done) {
 
@@ -372,7 +409,14 @@ int main(int argc, char* argv[]) {
 
 				if (ImGui::BeginMenu("PPU")) {
 					if (ImGui::MenuItem(ctx->ppu.hide ? "Show" : "Hide")) {
-						ctx->ppu.hide = !ctx->ppu.hide;
+						if (ctx->ppu.hide) {
+							ctx->ppu.hide = false;
+							PPU->set_tick_callback(ppu_debug);
+						}
+						else {
+							ctx->ppu.hide = true;
+							PPU->set_tick_callback(nullptr);
+						}
 						ctx->ppu.register_view &= !(ctx->ppu.hide);
 						ctx->ppu.vram.show &= !(ctx->ppu.hide);
 					}
@@ -384,15 +428,19 @@ int main(int argc, char* argv[]) {
 				}
 
 				if (ImGui::BeginMenu("Screen")) {
+					if (ImGui::MenuItem(ctx->screen.hide ? " Show" : "Hide")) {
+						ctx->screen.hide = !ctx->screen.hide;
+					}
 					ImGui::EndMenu();
 				}
 
 				ImGui::EndMainMenuBar();
 			}
 
-			if (!ctx->cpu.hide) { cpu_window(ctx, CPU, PPU); }
+			if (!ctx->cpu.hide) { cpu_window(&(ctx->cpu), CPU); }
 			if (!ctx->rom.hide) { rom_window(&(ctx->rom), CPU); }
 			if (!ctx->ppu.hide) { ppu_window(&(ctx->ppu), PPU); }
+			if (!ctx->screen.hide) { screen_window(&(ctx->screen)); }
 		}
 
 		/* * * * * * * * * * Main Window End * * * * * * * * * */
@@ -492,10 +540,10 @@ void ppu_window(_gui_context::_ppu* ctx, ppu* PPU) {
 			for (usize i = 0; i < 8; ++i) {
 				ImGui::BeginGroup();
 				ImGui::Text("$%04X", (0x3F00 + i));
-				ImGui::TextColored(NES_HARDWARE_PALETTE[ctx->color_palette[i]], " 0x%02X", ctx->color_palette[i]);
+				ImGui::TextColored(to_imgui_color(NES_HARDWARE_PALETTE[ctx->color_palette[i]]), " 0x%02X", ctx->color_palette[i]);
 				ImGui::Spacing();
 				ImGui::Text("$%04X", (0x3F00 + i + 8));
-				ImGui::TextColored(NES_HARDWARE_PALETTE[ctx->color_palette[i + 8]], " 0x%02X", ctx->color_palette[i + 8]);
+				ImGui::TextColored(to_imgui_color(NES_HARDWARE_PALETTE[ctx->color_palette[i + 8]]), " 0x%02X", ctx->color_palette[i + 8]);
 				ImGui::EndGroup();
 				ImGui::SameLine();
 			}
@@ -506,10 +554,10 @@ void ppu_window(_gui_context::_ppu* ctx, ppu* PPU) {
 			for (usize i = 0; i < 8; ++i) {
 				ImGui::BeginGroup();
 				ImGui::Text("$%04X", (0x3F10 + i));
-				ImGui::TextColored(NES_HARDWARE_PALETTE[ctx->color_palette[i]], " 0x%02X", ctx->color_palette[i]);
+				ImGui::TextColored(to_imgui_color(NES_HARDWARE_PALETTE[ctx->color_palette[i]]), " 0x%02X", ctx->color_palette[i]);
 				ImGui::Spacing();
 				ImGui::Text("$%04X", (0x3F10 + i + 8));
-				ImGui::TextColored(NES_HARDWARE_PALETTE[ctx->color_palette[i + 8]], " 0x%02X", ctx->color_palette[i + 8]);
+				ImGui::TextColored(to_imgui_color(NES_HARDWARE_PALETTE[ctx->color_palette[i + 8]]), " 0x%02X", ctx->color_palette[i + 8]);
 				ImGui::EndGroup();
 				ImGui::SameLine();
 			}
@@ -877,9 +925,7 @@ void rom_window(_gui_context::_rom* ctx, cpu* cpu) {
 	ImGui::End();
 }
 
-void cpu_window(_gui_context* _ctx, cpu* CPU, ppu* PPU) {
-
-	_gui_context::_cpu* ctx = &_ctx->cpu;
+void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 
 	float height = 100.f + (ctx->register_view ? 110.f : 0.f) + (ctx->instruction_view ? 90.f : 0.f) + (ctx->stack_view ? 30.f : 0.f);
 	ImGui::SetNextWindowSize(ImVec2(435.f, height));
@@ -917,8 +963,8 @@ void cpu_window(_gui_context* _ctx, cpu* CPU, ppu* PPU) {
 				if (ImGui::Button("Start")) {
 					CPU->run_async(
 						[](cpu&) {},
-						[_ctx, PPU](cpu& cpu) {
-							update_cpu_context(_ctx, &cpu, PPU);
+						[ctx](cpu& cpu) {
+							update_cpu_context(ctx, &cpu);
 						}
 					);
 					ctx->has_started = true;
@@ -1047,7 +1093,7 @@ void cpu_window(_gui_context* _ctx, cpu* CPU, ppu* PPU) {
 
 		ImGui::BeginDisabled(ctx->opcode.executed || !ctx->opcode.fetched);
 		if (ImGui::Button("Execute")) {
-			gui_execute(_ctx, CPU, PPU);
+			gui_execute(ctx, CPU);
 		}
 		ImGui::EndDisabled();
 
@@ -1056,7 +1102,7 @@ void cpu_window(_gui_context* _ctx, cpu* CPU, ppu* PPU) {
 		if (ImGui::Button("Step")) {
 			if (!ctx->opcode.fetched) gui_fetch(ctx, CPU);
 			gui_decode(ctx, CPU);
-			gui_execute(_ctx, CPU, PPU);
+			gui_execute(ctx, CPU);
 		}
 		ImGui::EndDisabled();
 
@@ -1271,6 +1317,27 @@ void cpu_window(_gui_context* _ctx, cpu* CPU, ppu* PPU) {
 	ImGui::End();
 }
 
+void screen_window(_gui_context::_screen* ctx) {
+
+	ImGui::SetNextWindowSize(ImVec2(270.f, 275.f));
+	if (!ImGui::Begin("Screen")) {
+		ImGui::End();
+		return;
+	}
+	ImVec2 display_size(256.f * 1.f, 240.f * 1.f);
+
+	//glBindTexture(GL_TEXTURE_2D, ctx->canvas);
+	//glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 240, GL_RGBA, GL_UNSIGNED_BYTE, ctx->pixel_buffer.data());
+	//glBindTexture(GL_TEXTURE_2D, 0);
+
+	ImGui::Image(
+		(ImTextureID)(intptr_t)(ctx->canvas),
+		display_size
+	);
+
+	ImGui::End();
+}
+
 inline void static gui_fetch(_gui_context::_cpu* ctx, cpu* CPU) {
 	CPU->fetch();
 	ctx->opcode.fetched = true;
@@ -1283,10 +1350,10 @@ inline void static gui_decode(_gui_context::_cpu* ctx, cpu* CPU) {
 
 	update_cpu_instruction(ctx, CPU);
 }
-inline void static gui_execute(_gui_context* ctx, cpu* CPU, ppu* PPU) {
+inline void static gui_execute(_gui_context::_cpu* ctx, cpu* CPU) {
 	CPU->execute();
-	ctx->cpu.opcode.fetched = false;
-	ctx->cpu.opcode.executed = true;
+	ctx->opcode.fetched = false;
+	ctx->opcode.executed = true;
 
-	update_cpu_context(ctx, CPU, PPU);
+	update_cpu_context(ctx, CPU);
 }

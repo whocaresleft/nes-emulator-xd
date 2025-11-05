@@ -44,7 +44,10 @@ public:
 		this->mirror_index = (this->prg_rom.size() == 0x4000) ? 0_usize : 1_usize;
 		this->_ppu->load(rom);
 	}
-	void tick(usize cycles) { this->cycles += cycles; this->_ppu->tick(cycles * 3); }
+	void tick(usize cycles) { 
+		this->cycles += cycles;
+		this->_ppu->tick(cycles * 3);
+	}
 
 	u8 read_u8(const u16 address) {
 		if (address >= 0x8000) { this->last_read = this->prg_rom[(address - 0x8000) & bus::MIRRORS_PRG[this->mirror_index]]; }

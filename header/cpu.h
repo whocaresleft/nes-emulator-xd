@@ -50,7 +50,10 @@ private:
 
 	bus* cpu_bus;
 
-	void tick(const usize cycles) { this->cycles += cycles; this->cpu_bus->tick(cycles); }
+	void tick(const usize cycles) { 
+		this->cycles += cycles; 
+		this->cpu_bus->tick(cycles);
+	}
 
 	void set_a(const u8 value) { this->a = value; this->update_negative_zero(this->a); }
 	void add_to_a(const u8 value);
@@ -207,7 +210,7 @@ public:
 
 		cpu_bus(nullptr)
 	{
-		this->pc = 0xc000; // for testnes
+		//this->pc = 0xc000; // for testnes
 		//this->pc = this->read_u16(0xFFFC);
 	}
 	cpu(cpu& to_copy) = delete;
@@ -218,6 +221,7 @@ public:
 	void load(cartridge* rom) { 
 		this->cpu_bus->load(rom);
 		this->rom_loaded = true;
+		this->pc = this->read_u8(0xFFFC);
 	}
 	void reset() {
 		this->opcode = 0x00_u8;
@@ -230,8 +234,8 @@ public:
 		this->cycles = 7_usize;
 		this->halted = false;
 		this->paused = true;
-		//this->pc = this->read_u16(0xFFFC_u16);
-		this->pc = 0xC000; // for testnes
+		this->pc = this->read_u16(0xFFFC_u16);
+		//this->pc = 0xC000; // for testnes
 	}
 
 	u8 read_u8(const u16 address) { return this->cpu_bus->read_u8(address); }
@@ -255,7 +259,7 @@ public:
 		while (!this->halted) {
 			first(*this);
 
-			//if (this->nmi_requested.load()) this->handle_nmi();
+			if (this->nmi_requested.load()) this->handle_nmi();
 			this->fetch();
 			this->decode();
 			this->execute();
@@ -291,7 +295,7 @@ public:
 				last(*this);
 
 				if (halted.load()) break;
-				//std::this_thread::sleep_for(std::chrono::seconds(1));
+				std::this_thread::sleep_for(std::chrono::milliseconds(2));
 			}
 		});
 	}
@@ -314,7 +318,7 @@ public:
 
 	void fetch() {
 		this->opcode = this->read_u8(this->pc++);
-		std::cout << std::hex << "Fetched " << static_cast<int>(this->opcode) << " at " << static_cast<int>(this->pc - 1) << std::dec << std::endl;
+		//std::cout << std::hex << "Fetched " << static_cast<int>(this->opcode) << " at " << static_cast<int>(this->pc - 1) << std::dec << std::endl;
 	}
 	void decode();
 	void execute();
@@ -327,7 +331,7 @@ public:
 		this->pc = this->read_u16(cpu_int->vector_address);
 	}
 
-	void handle_nmi() { this->interrupt(&interrupts::nmi_interrupt); }
+	void handle_nmi() { this->nmi_requested.store(false); this->interrupt(&interrupts::nmi_interrupt); }
 	void handle_irq() { this->interrupt(&interrupts::irq_interrupt); }
 };
 
