@@ -14,6 +14,9 @@
 #include "../header/palette.h"
 #include <cmath>
 #include <span>
+#include <fstream>
+
+std::ofstream log_file;
 
 struct _ram {
 	bool show;
@@ -166,12 +169,16 @@ typedef struct _gui_context {
 
 	struct _screen {
 		bool hide;
+		bool raw;
 		GLuint canvas;
 		std::span<u32> pixel_buffer;
+		struct _ram raw_buffer_bytes;
 		_screen() :
 			canvas(0),
+			raw(false),
 			hide(true),
-			pixel_buffer()
+			pixel_buffer(),
+			raw_buffer_bytes(0x0000_u16, 0xefff_u16)
 		{}
 	} screen;
 
@@ -182,7 +189,7 @@ typedef struct _gui_context {
 		screen()
 	{}
 } _gui_context;
-
+inline bool static memory_viewer(const char* label, u8 id, u32* start, u32* end, u32* look_for, u16 max, std::span<u8> view, int visible_rows);
 void ppu_window(_gui_context::_ppu*, ppu*);
 void rom_window(_gui_context::_rom*, cpu*);
 void cpu_window(_gui_context::_cpu*, cpu*);
@@ -193,17 +200,19 @@ inline void static gui_decode(_gui_context::_cpu*, cpu*);
 inline void static gui_execute(_gui_context::_cpu*, cpu*);
 
 inline void static update_ppu_context(_gui_context::_ppu* ctx, ppu* ppu) {
-	std::cout << "IN UPDATE_CONTEXT:" << static_cast<int>(ppu->get_status().snapshot()) << std::endl;
 	ctx->cycles = ppu->get_cycles();
-	ctx->ctrl = ppu->get_control().snapshot();
-	ctx->mask = ppu->get_mask().snapshot();
-	ctx->status = ppu->get_status().snapshot();
-	ctx->oamaddr = ppu->get_oam_address();
-	ctx->internal_buffer = ppu->get_data_buffer();
-	ctx->v = ppu->get_vram_address();
-	ctx->t = ppu->get_vram_address_temp();
 	ctx->scanlines = ppu->get_scanlines();
-	ctx->w_x = (static_cast<u8>(ppu->get_address_latch()) << 7) | ppu->get_fine_x();
+	
+	if (ctx->register_view) {
+		ctx->ctrl = ppu->get_control().snapshot();
+		ctx->mask = ppu->get_mask().snapshot();
+		ctx->status = ppu->get_status().snapshot();
+		ctx->oamaddr = ppu->get_oam_address();
+		ctx->internal_buffer = ppu->get_data_buffer();
+		ctx->v = ppu->get_vram_address();
+		ctx->t = ppu->get_vram_address_temp();
+		ctx->w_x = (static_cast<u8>(ppu->get_address_latch()) << 7) | ppu->get_fine_x();
+	}
 }
 inline void static update_cpu_registers(_gui_context::_cpu* ctx, cpu* cpu) {
 	ctx->registers.nmi_requested = cpu->is_nmi_requested();
@@ -246,7 +255,7 @@ int main(int argc, char* argv[]) {
 #ifdef _WIN32
 	::SetProcessDPIAware();
 #endif
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
 		printf("Error during SDL Context initialization: %s", SDL_GetError());
 		return 1;
 	}
@@ -324,6 +333,11 @@ int main(int argc, char* argv[]) {
 	ctx->screen.canvas = canvas_texture;
 	ctx->screen.pixel_buffer = std::span<u32>(pixel_buffer);
 
+	u8* ptr_u8 = reinterpret_cast<u8*>(ctx->screen.pixel_buffer.data());
+	usize size = ctx->screen.pixel_buffer.size_bytes();
+
+	ctx->screen.raw_buffer_bytes.view = std::span<u8>(ptr_u8, size);
+
 	bus* BUS = new bus();
 	cpu* CPU = new cpu();
 	ppu* PPU = new ppu();
@@ -347,6 +361,9 @@ int main(int argc, char* argv[]) {
 	auto ppu_debug = [ppu_ctx](ppu& _ppu) {
 		update_ppu_context(ppu_ctx, &_ppu);
 	};
+
+	log_file = std::ofstream("log.txt");
+	log_file << std::hex;
 
 	while (!done) {
 
@@ -430,7 +447,10 @@ int main(int argc, char* argv[]) {
 				if (ImGui::BeginMenu("Screen")) {
 					if (ImGui::MenuItem(ctx->screen.hide ? " Show" : "Hide")) {
 						ctx->screen.hide = !ctx->screen.hide;
+						ctx->screen.raw &= !(ctx->screen.hide);
 					}
+					ImGui::Separator();
+					ImGui::MenuItem("Raw bytes", nullptr, &ctx->screen.raw, !ctx->screen.hide);
 					ImGui::EndMenu();
 				}
 
@@ -485,7 +505,7 @@ void ppu_window(_gui_context::_ppu* ctx, ppu* PPU) {
 	ImGui::PlotLines("PPU Frequency", freq, 20, 0, nullptr, -1.f, 1.f, ImVec2(100.f, 20.f));
 
 	ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine();
-	ImGui::Text("Cycles: %d    Scanline: %d", ctx->cycles, ctx->scanlines);
+	ImGui::Text("Cycles: %3u    Scanline: %3u", ctx->cycles, ctx->scanlines);
 
 	if (ctx->register_view) {
 		ImGui::SeparatorText("Register view");
@@ -553,11 +573,11 @@ void ppu_window(_gui_context::_ppu* ctx, ppu* PPU) {
 			ImGui::BeginChild("sprite-palette", ImVec2(380.f, 85.f), ImGuiChildFlags_Borders);
 			for (usize i = 0; i < 8; ++i) {
 				ImGui::BeginGroup();
-				ImGui::Text("$%04X", (0x3F10 + i));
-				ImGui::TextColored(to_imgui_color(NES_HARDWARE_PALETTE[ctx->color_palette[i]]), " 0x%02X", ctx->color_palette[i]);
+				ImGui::Text("$%04X", (0x3F00 + i + 0x0010));
+				ImGui::TextColored(to_imgui_color(NES_HARDWARE_PALETTE[ctx->color_palette[i + 0x0010]]), " 0x%02X", ctx->color_palette[i + 0x0010]);
 				ImGui::Spacing();
-				ImGui::Text("$%04X", (0x3F10 + i + 8));
-				ImGui::TextColored(to_imgui_color(NES_HARDWARE_PALETTE[ctx->color_palette[i + 8]]), " 0x%02X", ctx->color_palette[i + 8]);
+				ImGui::Text("$%04X", (0x3F00 + i + 0x0018));
+				ImGui::TextColored(to_imgui_color(NES_HARDWARE_PALETTE[ctx->color_palette[i + 0x0018]]), " 0x%02X", ctx->color_palette[i + 0x0018]);
 				ImGui::EndGroup();
 				ImGui::SameLine();
 			}
@@ -616,166 +636,10 @@ void ppu_window(_gui_context::_ppu* ctx, ppu* PPU) {
 	}
 
 	if (ctx->vram.show) {
-		if (!ImGui::Begin("PPU Vram")) {
-			ImGui::End();
+		if (!memory_viewer("PPU Vram", 1, &ctx->vram.start, &ctx->vram.end, &ctx->vram.look_for, ctx->vram.max, ctx->vram.view, 4)) {
 			ImGui::End();
 			return;
 		}
-
-		ImGui::SeparatorText("Address Range");
-		ImGui::SetNextItemWidth(150.f);
-		InputHex("Start", &ctx->vram.start, 1, 16, 4);
-		ctx->vram.start = static_cast<u32>(std::clamp(static_cast<u16>(ctx->vram.start & 0x0000FFFF), 0_u16, ctx->vram.max));
-
-		ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine(); ImGui::SetNextItemWidth(100.f);
-		InputHex("Addr##", &ctx->vram.look_for, 1, 16, 4);
-		ImGui::SameLine();
-		char go_buf[13];
-		std::snprintf(go_buf, sizeof(go_buf), "Go to 0x%04X", ctx->vram.look_for);
-		bool go_to_button_pressed = ImGui::Button(go_buf);
-
-
-		ImGui::SetNextItemWidth(150.f);
-		InputHex("End", &ctx->vram.end, 1, 16, 4);
-		ctx->vram.end = static_cast<u32>(std::clamp(static_cast<u16>(ctx->vram.end & 0x0000FFFF), static_cast<u16>(ctx->vram.start & 0x0000FFFF), ctx->vram.max));
-
-		ImGui::SeparatorText("Memory View");
-
-		int start_aligned = ctx->vram.start & ~0x000F;
-		int end_aligned = ctx->vram.end | 0x000F;
-		int element_count = 1 + end_aligned - start_aligned;
-		int row_count = element_count / 16;
-
-		int height_multiplier = row_count > 2 ? 4 : (row_count > 1 ? 3 : 2);
-		float row_height = ImGui::GetTextLineHeightWithSpacing();
-		ImVec2 outer_size = ImVec2(0.0f, row_height * height_multiplier);
-		if (
-			ImGui::BeginTable(
-				"wram-table",
-				17,
-				ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY,
-				outer_size
-			)
-			) {
-			ImGui::TableSetupScrollFreeze(0, 1);
-			ImGui::TableSetupColumn("v + >");
-			for (int i = 0x0; i <= 0xF; ++i) {
-				char label[5];
-				std::snprintf(label, sizeof(label), "0x%02X", i);
-				ImGui::TableSetupColumn(label);
-			}
-			ImGui::TableHeadersRow();
-
-			/* If off_start, start with ---- on the first row
-			 * If off_end, end with ---- on the last row
-			 *
-			 * But, if start_aligned == end_aligned & ~0x000F, same row
-			 */
-			int off_start = ctx->vram.start - start_aligned;
-			int off_end = end_aligned - ctx->vram.end;
-			if (start_aligned == (end_aligned & ~0x000F)) {
-				ImGui::TableNextRow();
-				ImGui::TableSetColumnIndex(0);
-				char row_label[7];
-				std::snprintf(row_label, sizeof(row_label), "0x%04X", start_aligned);
-				ImGui::TextUnformatted(row_label);
-				int column = 0;
-
-				for (column; column < off_start; ++column) {
-					ImGui::TableSetColumnIndex(column + 1);
-					ImGui::TextUnformatted("----");
-				}
-				char cell_label[5];
-				for (column; column < (0xF - off_end) + 1; ++column) {
-					ImGui::TableSetColumnIndex(column + 1);
-					std::snprintf(cell_label, sizeof(cell_label), "0x%02X", ctx->vram.view[start_aligned + column]);
-					ImGui::TextUnformatted(cell_label);
-				}
-				for (column; column < 0x10; ++column) {
-					ImGui::TableSetColumnIndex(column + 1);
-					ImGui::TextUnformatted("----");
-				}
-
-			}
-			else {
-
-				int column = 0;
-				char row_label[7];
-				char cell_label[5];
-
-				// First row
-				ImGui::TableNextRow();
-				ImGui::TableSetColumnIndex(0);
-				std::snprintf(row_label, sizeof(row_label), "0x%04X", start_aligned);
-				ImGui::TextUnformatted(row_label);
-				for (column; column < off_start; ++column) {
-					ImGui::TableSetColumnIndex(column + 1);
-					ImGui::TextUnformatted("----");
-				}
-				for (column; column < 0x10; ++column) {
-					ImGui::TableSetColumnIndex(column + 1);
-					std::snprintf(cell_label, sizeof(cell_label), "0x%02X", ctx->vram.view[start_aligned + column]);
-					ImGui::TextUnformatted(cell_label);
-				}
-
-				// Intermediate rows
-				for (int row = 1; row < row_count - 1; ++row) {
-					ImGui::TableNextRow();
-					ImGui::TableSetColumnIndex(0);
-					std::snprintf(row_label, sizeof(row_label), "0x%04X", start_aligned + (row << 4));
-					ImGui::TextUnformatted(row_label);
-					column = 0;
-					for (column; column < 0x10; ++column) {
-						ImGui::TableSetColumnIndex(column + 1);
-						std::snprintf(cell_label, sizeof(cell_label), "0x%02X", ctx->vram.view[start_aligned + (row << 4) + column]);
-						ImGui::TextUnformatted(cell_label);
-					}
-				}
-
-				// Last row
-				ImGui::TableNextRow();
-				ImGui::TableSetColumnIndex(0);
-				std::snprintf(row_label, sizeof(row_label), "0x%04X", end_aligned & ~0x000F);
-				ImGui::TextUnformatted(row_label);
-				column = 0;
-				for (column; column < (0xF - off_end) + 1; ++column) {
-					ImGui::TableSetColumnIndex(column + 1);
-					std::snprintf(cell_label, sizeof(cell_label), "0x%02X", ctx->vram.view[(end_aligned & ~0x000F) + column]);
-					ImGui::TextUnformatted(cell_label);
-				}
-				for (column; column < 0x10; ++column) {
-					ImGui::TableSetColumnIndex(column + 1);
-					ImGui::TextUnformatted("----");
-				}
-
-			}
-
-			if (go_to_button_pressed) {
-				if (ctx->vram.look_for < ctx->vram.start || ctx->vram.look_for > ctx->vram.end) {
-					ImGui::OpenPopup("memory-view-range-error");
-				}
-				else {
-					u32 base = ctx->vram.look_for - start_aligned;
-					int row = base >> 4;
-					ImGui::SetScrollY(row_height * row);
-				}
-			}
-			if (ImGui::BeginPopup("memory-view-range-error")) {
-				char a_buf[36], b_buf[25];
-				std::snprintf(a_buf, sizeof(a_buf), "The address 0x%04X is outside range", ctx->vram.look_for);
-				ImGui::Text(a_buf);
-				std::snprintf(b_buf, sizeof(b_buf), "Range: [0x%04X - 0x%04X]", ctx->vram.start, ctx->vram.end);
-				ImGui::Text(b_buf);
-				if (ImGui::Button("Ok")) {
-					ImGui::CloseCurrentPopup();
-				}
-				ImGui::EndPopup();
-			}
-
-			ImGui::EndTable();
-		}
-
-		ImGui::End();
 	}
 
 	ImGui::End();
@@ -962,7 +826,9 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 			else {
 				if (ImGui::Button("Start")) {
 					CPU->run_async(
-						[](cpu&) {},
+						[](cpu& cpu) {
+							log_file << "PC: " << static_cast<int>(cpu.get_pc()) << ", OpCode: " << static_cast<int>(cpu.get_opcode()) << ", Instruction: " << INSTRUCTIONS[cpu.get_opcode()].mnemonic << std::endl;
+						},
 						[ctx](cpu& cpu) {
 							update_cpu_context(ctx, &cpu);
 						}
@@ -1150,169 +1016,10 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 	}
 
 	if (ctx->wram.show) {
-		if (!ImGui::Begin("Memory")) {
-			ImGui::End();
+		if (!memory_viewer("Memory", 0, &ctx->wram.start, &ctx->wram.end, &ctx->wram.look_for, ctx->wram.max, ctx->wram.view, 4)) {
 			ImGui::End();
 			return;
 		}
-
-		ImGui::SeparatorText("Address Range");
-		ImGui::SetNextItemWidth(150.f);
-		InputHex("Start", &ctx->wram.start, 1, 16, 4);
-		ctx->wram.start = static_cast<u32>(std::clamp(static_cast<u16>(ctx->wram.start & 0x0000FFFF), 0_u16, ctx->wram.max));
-
-		ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine(); ImGui::SetNextItemWidth(100.f);
-		InputHex("Addr##", &ctx->wram.look_for, 1, 16, 4);
-		ImGui::SameLine(); 
-		char go_buf[13];
-		std::snprintf(go_buf, sizeof(go_buf), "Go to 0x%04X", ctx->wram.look_for);
-		bool go_to_button_pressed = ImGui::Button(go_buf);
-		
-
-		ImGui::SetNextItemWidth(150.f);
-		InputHex("End", &ctx->wram.end, 1, 16, 4);
-		ctx->wram.end = static_cast<u32>(std::clamp(static_cast<u16>(ctx->wram.end & 0x0000FFFF), static_cast<u16>(ctx->wram.start & 0x0000FFFF), ctx->wram.max));
-
-		ImGui::SeparatorText("Memory View");
-
-		int start_aligned = ctx->wram.start & ~0x000F;
-		int end_aligned = ctx->wram.end | 0x000F;
-		int element_count = 1 + end_aligned - start_aligned;
-		int row_count = element_count / 16;
-
-		int height_multiplier = row_count > 2 ? 4 : (row_count > 1 ? 3 : 2);
-		float row_height = ImGui::GetTextLineHeightWithSpacing();
-		ImVec2 outer_size = ImVec2(0.0f, row_height * height_multiplier);
-		if (
-			ImGui::BeginTable(
-				"wram-table", 
-				17, 
-				ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY,
-				outer_size
-			)
-		) {
-			ImGui::TableSetupScrollFreeze(0, 1);
-			ImGui::TableSetupColumn("v + >");
-			for (int i = 0x0; i <= 0xF; ++i) {
-				char label[5];
-				std::snprintf(label, sizeof(label), "0x%02X", i);
-				ImGui::TableSetupColumn(label);
-			}
-			ImGui::TableHeadersRow();
-
-			/* If off_start, start with ---- on the first row
-			 * If off_end, end with ---- on the last row
-			 * 
-			 * But, if start_aligned == end_aligned & ~0x000F, same row
-			 */
-			int off_start = ctx->wram.start - start_aligned;
-			int off_end = end_aligned - ctx->wram.end;
-			if (start_aligned == (end_aligned & ~0x000F)) {
-				ImGui::TableNextRow();
-				ImGui::TableSetColumnIndex(0);
-				char row_label[7];
-				std::snprintf(row_label, sizeof(row_label), "0x%04X", start_aligned);
-				ImGui::TextUnformatted(row_label);
-				int column = 0;
-
-				for (column; column < off_start; ++column) {
-					ImGui::TableSetColumnIndex(column + 1);
-					ImGui::TextUnformatted("----");
-				}
-				char cell_label[5];
-				
-				//if (!CPU->get_halted() && CPU->get_paused()) {
-					for (column; column < (0xF - off_end) + 1; ++column) {
-						ImGui::TableSetColumnIndex(column + 1);
-						std::snprintf(cell_label, sizeof(cell_label), "0x%02X", ctx->wram.view[start_aligned + column]);
-						ImGui::TextUnformatted(cell_label);
-					}
-				//}
-				for (column; column < 0x10; ++column) {
-					ImGui::TableSetColumnIndex(column + 1);
-					ImGui::TextUnformatted("----");
-				}
-
-			}
-			else {
-			
-				int column = 0;
-				char row_label[7];
-				char cell_label[5];
-
-				// First row
-				ImGui::TableNextRow();
-				ImGui::TableSetColumnIndex(0);
-				std::snprintf(row_label, sizeof(row_label), "0x%04X", start_aligned);
-				ImGui::TextUnformatted(row_label);
-				for (column; column < off_start; ++column) {
-					ImGui::TableSetColumnIndex(column + 1);
-					ImGui::TextUnformatted("----");
-				}
-				for (column; column < 0x10; ++column) {
-					ImGui::TableSetColumnIndex(column + 1);
-					std::snprintf(cell_label, sizeof(cell_label), "0x%02X", ctx->wram.view[start_aligned + column]);
-					ImGui::TextUnformatted(cell_label);
-				}
-				
-				// Intermediate rows
-				for (int row = 1; row < row_count - 1; ++row) {
-					ImGui::TableNextRow();
-					ImGui::TableSetColumnIndex(0);
-					std::snprintf(row_label, sizeof(row_label), "0x%04X", start_aligned + (row << 4));
-					ImGui::TextUnformatted(row_label);
-					column = 0;
-					for (column; column < 0x10; ++column) {
-						ImGui::TableSetColumnIndex(column + 1);
-						std::snprintf(cell_label, sizeof(cell_label), "0x%02X", ctx->wram.view[start_aligned + (row << 4) + column]);
-						ImGui::TextUnformatted(cell_label);
-					}
-				}
-
-				// Last row
-				ImGui::TableNextRow();
-				ImGui::TableSetColumnIndex(0);
-				std::snprintf(row_label, sizeof(row_label), "0x%04X", end_aligned & ~0x000F);
-				ImGui::TextUnformatted(row_label);
-				column = 0;
-				for (column; column < (0xF - off_end) + 1; ++column) {
-					ImGui::TableSetColumnIndex(column + 1);
-					std::snprintf(cell_label, sizeof(cell_label), "0x%02X", ctx->wram.view[(end_aligned & ~0x000F) + column]);
-					ImGui::TextUnformatted(cell_label);
-				}
-				for (column; column < 0x10; ++column) {
-					ImGui::TableSetColumnIndex(column + 1);
-					ImGui::TextUnformatted("----");
-				}
-
-			}
-
-			if (go_to_button_pressed) {
-				if (ctx->wram.look_for < ctx->wram.start || ctx->wram.look_for > ctx->wram.end) {
-					ImGui::OpenPopup("memory-view-range-error");
-				}
-				else {
-					u32 base = ctx->wram.look_for - start_aligned;
-					int row = base >> 4;
-					ImGui::SetScrollY(row_height * row);
-				}
-			}
-			if (ImGui::BeginPopup("memory-view-range-error")) {
-				char a_buf[36], b_buf[25];
-				std::snprintf(a_buf, sizeof(a_buf), "The address 0x%04X is outside range", ctx->wram.look_for);
-				ImGui::Text(a_buf);
-				std::snprintf(b_buf, sizeof(b_buf), "Range: [0x%04X - 0x%04X]", ctx->wram.start, ctx->wram.end);
-				ImGui::Text(b_buf);
-				if (ImGui::Button("Ok")) {
-					ImGui::CloseCurrentPopup();
-				}
-				ImGui::EndPopup();
-			}
-
-			ImGui::EndTable();
-		}
-
-		ImGui::End();
 	}
 	ImGui::End();
 }
@@ -1326,14 +1033,21 @@ void screen_window(_gui_context::_screen* ctx) {
 	}
 	ImVec2 display_size(256.f * 1.f, 240.f * 1.f);
 
-	//glBindTexture(GL_TEXTURE_2D, ctx->canvas);
-	//glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 240, GL_RGBA, GL_UNSIGNED_BYTE, ctx->pixel_buffer.data());
-	//glBindTexture(GL_TEXTURE_2D, 0);
+	glBindTexture(GL_TEXTURE_2D, ctx->canvas);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 240, GL_RGBA, GL_UNSIGNED_BYTE, ctx->pixel_buffer.data());
+	glBindTexture(GL_TEXTURE_2D, 0);
 
 	ImGui::Image(
 		(ImTextureID)(intptr_t)(ctx->canvas),
 		display_size
 	);
+
+	if (ctx->raw) {
+		if (!memory_viewer("Screen Pixel Buffer", 2, &ctx->raw_buffer_bytes.start, &ctx->raw_buffer_bytes.end, &ctx->raw_buffer_bytes.look_for, ctx->raw_buffer_bytes.max, ctx->raw_buffer_bytes.view, 15)) {
+			ImGui::End();
+			return;
+		}
+	}
 
 	ImGui::End();
 }
@@ -1356,4 +1070,174 @@ inline void static gui_execute(_gui_context::_cpu* ctx, cpu* CPU) {
 	ctx->opcode.executed = true;
 
 	update_cpu_context(ctx, CPU);
+}
+
+inline bool static memory_viewer(const char* label, u8 id, u32* start, u32* end, u32* look_for, u16 max, std::span<u8> view, int visible_rows) {
+	if (!ImGui::Begin(label)) {
+		ImGui::End();
+		return false;
+	}
+
+	ImGui::SeparatorText("Address Range");
+	ImGui::SetNextItemWidth(150.f);
+	InputHex("Start", start, 1, 16, 4);
+	*start = static_cast<u32>(std::clamp(static_cast<u16>(*start & 0x0000FFFF), 0_u16, max));
+
+	ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine(); ImGui::Spacing(); ImGui::SameLine(); ImGui::SetNextItemWidth(100.f);
+	InputHex("Addr##", look_for, 1, 16, 4);
+	ImGui::SameLine();
+	char go_buf[13];
+	std::snprintf(go_buf, sizeof(go_buf), "Go to 0x%04X", *look_for);
+	bool go_to_button_pressed = ImGui::Button(go_buf);
+
+
+	ImGui::SetNextItemWidth(150.f);
+	InputHex("End", end, 1, 16, 4);
+	*end = static_cast<u32>(std::clamp(static_cast<u16>(*end & 0x0000FFFF), static_cast<u16>(*start & 0x0000FFFF), max));
+
+	ImGui::SeparatorText("Raw bytes view");
+
+	int start_aligned = (*start) & ~0x000F;
+	int end_aligned = (*end) | 0x000F;
+	int element_count = 1 + end_aligned - start_aligned;
+	int row_count = element_count / 16;
+
+
+	//int height_multiplier = row_count > 2 ? 4 : (row_count > 1 ? 3 : 2);
+	int height_multiplier = (row_count + 2) > visible_rows ? visible_rows : row_count + 1;
+	float row_height = ImGui::GetTextLineHeightWithSpacing();
+	ImVec2 outer_size = ImVec2(0.0f, row_height * height_multiplier);
+	char table_label[7];
+	std::snprintf(table_label, sizeof(table_label), "table%c", id);
+	if (
+		ImGui::BeginTable(
+			table_label,
+			17,
+			ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY,
+			outer_size
+		)
+		) {
+		ImGui::TableSetupScrollFreeze(0, 1);
+		ImGui::TableSetupColumn("v + >");
+		for (int i = 0x0; i <= 0xF; ++i) {
+			char label[5];
+			std::snprintf(label, sizeof(label), "0x%02X", i);
+			ImGui::TableSetupColumn(label);
+		}
+		ImGui::TableHeadersRow();
+
+		/* If off_start, start with ---- on the first row
+		 * If off_end, end with ---- on the last row
+		 *
+		 * But, if start_aligned == end_aligned & ~0x000F, same row
+		 */
+		int off_start = (*start) - start_aligned;
+		int off_end = end_aligned - (*end);
+		if (start_aligned == (end_aligned & ~0x000F)) {
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			char row_label[7];
+			std::snprintf(row_label, sizeof(row_label), "0x%04X", start_aligned);
+			ImGui::TextUnformatted(row_label);
+			int column = 0;
+
+			for (column; column < off_start; ++column) {
+				ImGui::TableSetColumnIndex(column + 1);
+				ImGui::TextUnformatted("----");
+			}
+			char cell_label[5];
+
+			//if (!CPU->get_halted() && CPU->get_paused()) {
+			for (column; column < (0xF - off_end) + 1; ++column) {
+				ImGui::TableSetColumnIndex(column + 1);
+				std::snprintf(cell_label, sizeof(cell_label), "0x%02X", view[start_aligned + column]);
+				ImGui::TextUnformatted(cell_label);
+			}
+			//}
+			for (column; column < 0x10; ++column) {
+				ImGui::TableSetColumnIndex(column + 1);
+				ImGui::TextUnformatted("----");
+			}
+
+		}
+		else {
+
+			int column = 0;
+			char row_label[7];
+			char cell_label[5];
+
+			// First row
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			std::snprintf(row_label, sizeof(row_label), "0x%04X", start_aligned);
+			ImGui::TextUnformatted(row_label);
+			for (column; column < off_start; ++column) {
+				ImGui::TableSetColumnIndex(column + 1);
+				ImGui::TextUnformatted("----");
+			}
+			for (column; column < 0x10; ++column) {
+				ImGui::TableSetColumnIndex(column + 1);
+				std::snprintf(cell_label, sizeof(cell_label), "0x%02X", view[start_aligned + column]);
+				ImGui::TextUnformatted(cell_label);
+			}
+
+			// Intermediate rows
+			for (int row = 1; row < row_count - 1; ++row) {
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				std::snprintf(row_label, sizeof(row_label), "0x%04X", start_aligned + (row << 4));
+				ImGui::TextUnformatted(row_label);
+				column = 0;
+				for (column; column < 0x10; ++column) {
+					ImGui::TableSetColumnIndex(column + 1);
+					std::snprintf(cell_label, sizeof(cell_label), "0x%02X", view[start_aligned + (row << 4) + column]);
+					ImGui::TextUnformatted(cell_label);
+				}
+			}
+
+			// Last row
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			std::snprintf(row_label, sizeof(row_label), "0x%04X", end_aligned & ~0x000F);
+			ImGui::TextUnformatted(row_label);
+			column = 0;
+			for (column; column < (0xF - off_end) + 1; ++column) {
+				ImGui::TableSetColumnIndex(column + 1);
+				std::snprintf(cell_label, sizeof(cell_label), "0x%02X", view[(end_aligned & ~0x000F) + column]);
+				ImGui::TextUnformatted(cell_label);
+			}
+			for (column; column < 0x10; ++column) {
+				ImGui::TableSetColumnIndex(column + 1);
+				ImGui::TextUnformatted("----");
+			}
+
+		}
+
+		if (go_to_button_pressed) {
+			if (*look_for < *start || *look_for > *end) {
+				ImGui::OpenPopup("memory-view-range-error");
+			}
+			else {
+				u32 base = *look_for - start_aligned;
+				int row = base >> 4;
+				ImGui::SetScrollY(row_height * row);
+			}
+		}
+		if (ImGui::BeginPopup("memory-view-range-error")) {
+			char a_buf[36], b_buf[25];
+			std::snprintf(a_buf, sizeof(a_buf), "The address 0x%04X is outside range", *look_for);
+			ImGui::Text(a_buf);
+			std::snprintf(b_buf, sizeof(b_buf), "Range: [0x%04X - 0x%04X]", *start, *end);
+			ImGui::Text(b_buf);
+			if (ImGui::Button("Ok")) {
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
+
+		ImGui::EndTable();
+	}
+
+	ImGui::End();
+	return true;
 }

@@ -17,9 +17,9 @@ private:
 	void request_nmi();
 
 	static constexpr u16 MIRRORED_ADDRESSES[3][4] = {
-		{ 0x0000, 0x0000, 0x0800, 0x0800 }, // Vertical
-		{ 0x0000, 0x0400, 0x0400, 0x0800 }, // Horizontal
-		{ 0x0000, 0x0000, 0x0000, 0x0000 }  // Four Screen
+		{ 0x0000, 0x0400, 0x0000, 0x0400 }, //{ 0x0000, 0x0400, 0x0400, 0x0800 }, // Vertical
+		{ 0x0000, 0x0000, 0x0400, 0x0400 }, //{ 0x0000, 0x0000, 0x0800, 0x0800 }, // Horizontal
+		{ 0x0000, 0x0000, 0x0000, 0x0000 }//{ 0x0000, 0x0000, 0x0000, 0x0000 }  // Four Screen
 	};
 
 	usize scanlines;
@@ -52,19 +52,41 @@ private:
 
 
 	u16 mirror_address(const u16 address) const {
-		u16 mirrored = address & 0b10111111111111_u16;
-		u16 vram_index = mirrored - 0x2000_u16;
-		u16 name_table = vram_index >> 10_u16;
-		return vram_index - MIRRORED_ADDRESSES[this->mirroring_type][name_table];
+		u16 vram_index = address - 0x2000;
+		u16 name_table = vram_index >> 10;
+		u16 offset = vram_index & 0x03FF;
+		u16 base = MIRRORED_ADDRESSES[this->mirroring_type][name_table];
+		return base + offset;
 	}
 
 	u8 read_ppu_bus(const u16 address) const {
-		if (address <= 0x1FFF) { return this->chr_rom[address]; }
-		if (address <= 0x2FFF) { return this->vram[this->mirror_address(address)]; }
+		if (address <= 0x1FFF) { return this->chr_rom.empty() ? 0 : this->chr_rom[address & (this->chr_rom.size() - 1)]; }
+		if (address <= 0x3EFF) { return this->vram[this->mirror_address(address & 0x2FFF)]; }
+		if (address <= 0x3FFF) {
+			u16 palette_address = address & 0x001F;
+			if ((palette_address & 0x0003) == 0) {
+				palette_address &= 0x000F;
+			}
+			return this->palette_table[palette_address]; 
+		}
 		return 0;
 	}
 	void write_ppu_bus(const u16 address, const u8 data) {
-		if (0x2000 <= address && address <= 0x2FFF) { this->vram[this->mirror_address(address)] = data; }
+		if (address <= 0x1FFF) { 
+			if (this->chr_rom.empty()) 
+				return; 
+			std::cout << "SCRITTURA CHR-RAM: Addr=" << std::hex << address
+				<< " Data=" << (int)data << std::dec << std::endl;
+			this->chr_rom[address & (this->chr_rom.size() - 1)] = data; 
+		}
+		else if (address <= 0x3EFF) { this->vram[this->mirror_address(address & 0x2FFF)] = data; }
+		else if (address <= 0x3FFF) {
+			u16 palette_address = address & 0x001F;
+			if ((palette_address & 0x0003) == 0) {
+				palette_address &= 0x000F;
+			}
+			this->palette_table[palette_address] = data;
+		}
 	}
 
 	void write_control(const u8 data) {
@@ -104,13 +126,15 @@ private:
 		u16 address = this->vram_address & 0x3FFF;
 
 		if (address <= 0x3EFF) {
+			std::cout << std::hex << "I'm about to write at address " << address << " the following data: " << static_cast<int>(data) << std::dec << std::endl;
 			this->write_ppu_bus(address, data);
 		}
 		else {
-			u16 palette_address = address & 0x000F;
+			u16 palette_address = address & 0x001F;
 			if ((palette_address & 0x0003) == 0) {
-				palette_address = 0x0000;
+				palette_address &= 0x000F;
 			}
+			std::cout << "Sto per scrivere 0x" << std::hex << static_cast<int>(data) << " nella palette table all'indirizzo 0x" << static_cast<int>(palette_address) << std::dec << std::endl;
 			this->palette_table[palette_address] = data;
 		}
 
@@ -138,9 +162,9 @@ private:
 			this->data_buffer = data_from_vram;
 		}
 		else {
-			u16 palette_address = address & 0x000F;
+			u16 palette_address = address & 0x001F;
 			if ((palette_address & 0x0003) == 0) {
-				palette_address = 0x0000;
+				palette_address &= 0x000F;
 			}
 			data_to_return = this->palette_table[palette_address];
 			this->data_buffer = this->read_ppu_bus(address - 0x1000);
@@ -149,25 +173,22 @@ private:
 	}
 	void update_scanline() {
 		this->cycles -= 341;
-
-		std::cout << scanlines << std::endl;
-
+		
 		if (this->scanlines <= 239) { // draw
-			auto offset = 256 * (this->scanlines - 1);
-			//this->draw_line(this->pixel_buffer.subspan(offset, 256)); // index is current -1 because f shift
+			auto offset = 256 * this->scanlines;
+			this->draw_line(this->pixel_buffer.subspan(offset, 256));
 		}
 		else if (this->scanlines == 241) { // Generate NMI
 			this->status.set_vblank(true);
-			std::cout << "Setting true " << static_cast<int>(this->status.snapshot()) << std::endl;
+			
 			if (this->control.generate_nmi()) {
 				this->request_nmi();
-				std::cout << "Requesting nmi" << std::endl;
 			}
 		}
 
 		else if (this->scanlines == 261) {
 			this->status.update(0);
-			std::cout << "Setting false " << static_cast<int>(this->status.snapshot()) << std::endl;
+			
 			if (this->mask.is_rendering_enabled())
 				this->vram_address = this->vram_address_temp;
 		}
@@ -188,8 +209,10 @@ private:
 
 		if (!this->mask.is_rendering_enabled()) {
 			this->fill_with_backdrop_color(target_row);
+			std::cout << "Fillato con sfondo" << std::endl;
 			return;
 		}
+		
 		for (int z = 0; z < 2; ++z) {
 			this->latch_nametable = this->read_ppu_bus(0x2000 | (this->vram_address & 0x0FFF));
 			this->latch_attribute = this->read_ppu_bus(this->calculate_attr_address(this->vram_address));
@@ -216,7 +239,12 @@ private:
 
 				final_palette_index = (attribute_bits << 2) | pattern_bits;
 			}
-			target_row[cycle] = this->get_color_from_palette(final_palette_index);
+			auto color = this->get_color_from_palette(final_palette_index);
+			std::cout << std::hex << "Sto per scrivere " << color << " nel pixel_buffer, alla posizione: " << (this->scanlines * 256 + cycle) << std::dec << std::endl;
+			std::cout << "PPU Draw: Idx=" << static_cast<int>(final_palette_index)
+				<< " -> Color=" << std::hex << color
+				<< std::dec << std::endl;
+			target_row[cycle] = color;
 
 			this->bg_shift_pattern_lo <<= 1;
 			this->bg_shift_pattern_hi <<= 1;
@@ -320,7 +348,7 @@ private:
 	}
 
 	u32 get_color_from_palette(usize index) {
-		if (index % 4 == 0)
+		if ((index & 3) == 0)
 			index = 0;
 
 		u8 nes_color_index = this->palette_table[index & 0x1F];
@@ -357,7 +385,8 @@ public:
 		bg_shift_pattern_hi(0),
 		bg_shift_attrib_lo(0),
 		bg_shift_attrib_hi(0)
-	{}
+	{
+	}
 
 	void set_pixel_buffer(std::vector<u32> buffer) {
 		this->pixel_buffer = std::span<u32>(buffer);
@@ -387,7 +416,7 @@ public:
 		case 4: this->write_oam_data(data); break;
 		case 5: this->write_scroll(data); break;
 		case 6: this->write_address(data); break;
-		case 7: this->write_control(data); break;
+		case 7: this->write_data(data); break;
 		default: break;
 		}
 	}

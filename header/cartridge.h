@@ -5,7 +5,7 @@
 #include <ranges>
 #include <algorithm>
 #include "definitions.h"
-
+#include <iostream>
 typedef enum mirroring {
 	vertical = 0_u8,
 	horizontal = 1_u8,
@@ -65,7 +65,7 @@ public:
 		this->chr_rom = std::vector<u8>{ raw.begin() + chr_start, raw.begin() + chr_start + chr_size };
 		this->mapper = mapper;
 		this->screen_mirroring = screen_mirroring;
-		//std::cout << ": [ prg:" << prg_rom.size() << " - chr:" << chr_rom.size() << " - mapper:" << static_cast<uint32_t>(mapper) << " - mirroring:" << static_cast<int>(screen_mirroring) << " ]" << std::endl;
+		std::cout << ": [ prg:" << prg_rom.size() << " - chr:" << chr_rom.size() << " - mapper:" << static_cast<uint32_t>(mapper) << " - mirroring:" << static_cast<int>(screen_mirroring) << " ]" << std::endl;
 	}
 	cartridge(const cartridge& to_copy) : 
 		mapper(to_copy.mapper),
