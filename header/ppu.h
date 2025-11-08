@@ -28,6 +28,8 @@ private:
 	ppu_mask mask;
 	ppu_status status;
 
+	std::atomic<bool> frame_ready;
+
 	u16 vram_address, vram_address_temp;
 	u8 fine_x;
 	bool address_latch;
@@ -36,7 +38,10 @@ private:
 	u8 data_buffer;
 
 	bus* cpu_bus;
-	std::span<u32> pixel_buffer;
+
+	std::span<u32> pixel_buffer_last;
+	std::span<u32> pixel_buffer_current;
+
 	enum mirroring mirroring_type;
 	std::span<u8> chr_rom;
 	std::array<u8, 32> palette_table;
@@ -75,8 +80,8 @@ private:
 		if (address <= 0x1FFF) { 
 			if (this->chr_rom.empty()) 
 				return; 
-			std::cout << "SCRITTURA CHR-RAM: Addr=" << std::hex << address
-				<< " Data=" << (int)data << std::dec << std::endl;
+			//std::cout << "SCRITTURA CHR-RAM: Addr=" << std::hex << address
+			//	<< " Data=" << (int)data << std::dec << std::endl;
 			this->chr_rom[address & (this->chr_rom.size() - 1)] = data; 
 		}
 		else if (address <= 0x3EFF) { this->vram[this->mirror_address(address & 0x2FFF)] = data; }
@@ -126,7 +131,7 @@ private:
 		u16 address = this->vram_address & 0x3FFF;
 
 		if (address <= 0x3EFF) {
-			std::cout << std::hex << "I'm about to write at address " << address << " the following data: " << static_cast<int>(data) << std::dec << std::endl;
+			//std::cout << std::hex << "I'm about to write at address " << address << " the following data: " << static_cast<int>(data) << std::dec << std::endl;
 			this->write_ppu_bus(address, data);
 		}
 		else {
@@ -134,7 +139,7 @@ private:
 			if ((palette_address & 0x0003) == 0) {
 				palette_address &= 0x000F;
 			}
-			std::cout << "Sto per scrivere 0x" << std::hex << static_cast<int>(data) << " nella palette table all'indirizzo 0x" << static_cast<int>(palette_address) << std::dec << std::endl;
+			//std::cout << "Sto per scrivere 0x" << std::hex << static_cast<int>(data) << " nella palette table all'indirizzo 0x" << static_cast<int>(palette_address) << std::dec << std::endl;
 			this->palette_table[palette_address] = data;
 		}
 
@@ -176,11 +181,14 @@ private:
 		
 		if (this->scanlines <= 239) { // draw
 			auto offset = 256 * this->scanlines;
-			this->draw_line(this->pixel_buffer.subspan(offset, 256));
+			this->draw_line(this->pixel_buffer_current.subspan(offset, 256));
 		}
 		else if (this->scanlines == 241) { // Generate NMI
 			this->status.set_vblank(true);
 			
+			this->swap_buffers();
+			this->frame_ready = true;
+
 			if (this->control.generate_nmi()) {
 				this->request_nmi();
 			}
@@ -209,7 +217,7 @@ private:
 
 		if (!this->mask.is_rendering_enabled()) {
 			this->fill_with_backdrop_color(target_row);
-			std::cout << "Fillato con sfondo" << std::endl;
+			//std::cout << "Fillato con sfondo" << std::endl;
 			return;
 		}
 		
@@ -240,11 +248,12 @@ private:
 				final_palette_index = (attribute_bits << 2) | pattern_bits;
 			}
 			auto color = this->get_color_from_palette(final_palette_index);
-			std::cout << std::hex << "Sto per scrivere " << color << " nel pixel_buffer, alla posizione: " << (this->scanlines * 256 + cycle) << std::dec << std::endl;
-			std::cout << "PPU Draw: Idx=" << static_cast<int>(final_palette_index)
-				<< " -> Color=" << std::hex << color
-				<< std::dec << std::endl;
+			//std::cout << std::hex << "Sto per scrivere " << color << " nel pixel_buffer, alla posizione: " << (this->scanlines * 256 + cycle) << std::dec << std::endl;
+			//std::cout << "PPU Draw: Idx=" << static_cast<int>(final_palette_index)
+			//	<< " -> Color=" << std::hex << color << ", this: ";
+				
 			target_row[cycle] = color;
+			//std:: cout << target_row[cycle] << std::dec << std::endl;
 
 			this->bg_shift_pattern_lo <<= 1;
 			this->bg_shift_pattern_hi <<= 1;
@@ -374,8 +383,10 @@ public:
 		palette_table({}),
 		tick_callback(nullptr),
 		mirroring_type(mirroring::vertical),
-		pixel_buffer({}),
+		pixel_buffer_last({}),
+		pixel_buffer_current({}),
 		cpu_bus(nullptr),
+		frame_ready(false),
 
 		latch_attribute(0),
 		latch_nametable(0),
@@ -388,13 +399,18 @@ public:
 	{
 	}
 
-	void set_pixel_buffer(std::vector<u32> buffer) {
-		this->pixel_buffer = std::span<u32>(buffer);
+	void set_pixel_buffers(std::vector<u32> buffer1, std::vector<u32> buffer2) {
+		this->pixel_buffer_current = std::span<u32>(buffer1);
+		this->pixel_buffer_last = std::span<u32>(buffer2);
 	}
 
 	template<typename C>
 	void set_tick_callback(C&& callback) {
 		this->tick_callback = callback;
+	}
+
+	void swap_buffers() {
+		std::swap(this->pixel_buffer_current, this->pixel_buffer_last);
 	}
 
 	void connect(bus* cpu_bus) { this->cpu_bus = cpu_bus; }
@@ -447,6 +463,12 @@ public:
 
 	u8 get_oam_address() { return this->oam_address; }
 	u8 get_data_buffer() { return this->data_buffer; }
+
+	bool is_frame_ready() { return this->frame_ready.load(); }
+	void reset_frame_ready() { this->frame_ready.store(false); }
+	std::span<u32> get_last_screen() { 
+		return this->pixel_buffer_last;
+	}
 };
 
 #endif

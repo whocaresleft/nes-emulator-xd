@@ -16,9 +16,7 @@
 #include <span>
 #include <fstream>
 
-std::ofstream log_file;
-
-struct _ram {
+struct ui_ram {
 	bool show;
 	u32 start;
 	u32 end;
@@ -28,7 +26,7 @@ struct _ram {
 	u16 min;
 	u16 max;
 
-	_ram(u16 min, u16 max) :
+	ui_ram(u16 min, u16 max) :
 		show(false),
 		start(0x0000_u16),
 		end(0x002F_u16),
@@ -43,8 +41,8 @@ struct _ram {
 };
 
 
-typedef struct _gui_context {
-	struct _rom {
+typedef struct ui_gui_context {
+	struct ui_rom {
 		bool hide;
 		bool inserted, loaded;
 		bool show_prg, show_chr;
@@ -52,7 +50,7 @@ typedef struct _gui_context {
 		cartridge* game_opened;
 		cartridge* game_loaded;
 
-		_rom() :
+		ui_rom() :
 			hide(true),
 			inserted(false),
 			loaded(false),
@@ -63,13 +61,13 @@ typedef struct _gui_context {
 			show_chr(false),
 			show_prg(false)
 		{}
-	} rom;
+	} m_rom;
 
-	struct _cpu {
-		struct _bus {
+	struct ui_cpu {
+		struct ui_bus {
 			bool show;
 			u8 last_read;
-			_bus() :
+			ui_bus() :
 				show(false),
 				last_read(0)
 			{}
@@ -82,12 +80,12 @@ typedef struct _gui_context {
 		bool instruction_view;
 		bool stack_view;
 		usize cycles;
-		struct _ram wram;
-		struct _registers {
+		struct ui_ram wram;
+		struct ui_registers {
 			bool nmi_requested;
 			u8 a, x, y, sp, p;
 			u16 pc;
-			_registers() : 
+			ui_registers() : 
 				a(0x00),
 				x(0x00),
 				y(0x00),
@@ -97,14 +95,14 @@ typedef struct _gui_context {
 				pc(0x0000)
 			{}
 		} registers;
-		struct _opcode {
+		struct ui_opcode {
 			bool fetched;
 			bool executed;
 			const instruction* instr;
 
 			int operands[2];
 
-			_opcode() :
+			ui_opcode() :
 				fetched(false),
 				executed(false),
 				instr(nullptr),
@@ -112,7 +110,7 @@ typedef struct _gui_context {
 			{}
 		} opcode;
 	
-		_cpu() :
+		ui_cpu() :
 			something_loaded(false),
 			has_started(false),
 			last_freq(.0f),
@@ -125,9 +123,9 @@ typedef struct _gui_context {
 			registers(),
 			opcode()
 		{}
-	} cpu;
+	} m_cpu;
 
-	struct _ppu {
+	struct ui_ppu {
 	
 		bool hide;
 		bool register_view;
@@ -146,9 +144,9 @@ typedef struct _gui_context {
 		std::span<u8> color_palette;
 		std::span<u8> oam_memory;
 
-		struct _ram vram;
+		struct ui_ram vram;
 
-		_ppu() :
+		ui_ppu() :
 			hide(true),
 			ctrl(0),
 			mask(0),
@@ -165,41 +163,41 @@ typedef struct _gui_context {
 			vram(0x0000_u16, 0x07FF_u16),
 			register_view(false)
 		{}
-	} ppu;
+	} m_ppu;
 
-	struct _screen {
+	struct ui_screen {
 		bool hide;
 		bool raw;
 		GLuint canvas;
-		std::span<u32> pixel_buffer;
-		struct _ram raw_buffer_bytes;
-		_screen() :
+		class ppu* ppu;
+		//struct _ram raw_buffer_bytes;
+		ui_screen() :
 			canvas(0),
 			raw(false),
 			hide(true),
-			pixel_buffer(),
-			raw_buffer_bytes(0x0000_u16, 0xefff_u16)
+			ppu(nullptr)
+			//raw_buffer_bytes(0x0000_u16, 0xefff_u16)
 		{}
-	} screen;
+	} m_screen;
 
-	_gui_context() : 
-		rom(),
-		cpu(),
-		ppu(),
-		screen()
+	ui_gui_context() : 
+		m_rom(),
+		m_cpu(),
+		m_ppu(),
+		m_screen()
 	{}
-} _gui_context;
+} ui_gui_context;
 inline bool static memory_viewer(const char* label, u8 id, u32* start, u32* end, u32* look_for, u16 max, std::span<u8> view, int visible_rows);
-void ppu_window(_gui_context::_ppu*, ppu*);
-void rom_window(_gui_context::_rom*, cpu*);
-void cpu_window(_gui_context::_cpu*, cpu*);
-void screen_window(_gui_context::_screen*);
+void ppu_window(ui_gui_context::ui_ppu*, ppu*);
+void rom_window(ui_gui_context::ui_rom*, cpu*);
+void cpu_window(ui_gui_context::ui_cpu*, cpu*);
+void screen_window(ui_gui_context::ui_screen*);
 
-inline void static gui_fetch(_gui_context::_cpu*, cpu*);
-inline void static gui_decode(_gui_context::_cpu*, cpu*);
-inline void static gui_execute(_gui_context::_cpu*, cpu*);
+inline void static gui_fetch(ui_gui_context::ui_cpu*, cpu*);
+inline void static gui_decode(ui_gui_context::ui_cpu*, cpu*);
+inline void static gui_execute(ui_gui_context::ui_cpu*, cpu*);
 
-inline void static update_ppu_context(_gui_context::_ppu* ctx, ppu* ppu) {
+inline void static update_ppu_context(ui_gui_context::ui_ppu* ctx, ppu* ppu) {
 	ctx->cycles = ppu->get_cycles();
 	ctx->scanlines = ppu->get_scanlines();
 	
@@ -214,7 +212,7 @@ inline void static update_ppu_context(_gui_context::_ppu* ctx, ppu* ppu) {
 		ctx->w_x = (static_cast<u8>(ppu->get_address_latch()) << 7) | ppu->get_fine_x();
 	}
 }
-inline void static update_cpu_registers(_gui_context::_cpu* ctx, cpu* cpu) {
+inline void static update_cpu_registers(ui_gui_context::ui_cpu* ctx, cpu* cpu) {
 	ctx->registers.nmi_requested = cpu->is_nmi_requested();
 	ctx->registers.pc = cpu->get_pc();
 	ctx->cycles = cpu->get_cycles();
@@ -226,7 +224,7 @@ inline void static update_cpu_registers(_gui_context::_cpu* ctx, cpu* cpu) {
 		ctx->registers.sp = cpu->get_sp();
 	}
 }
-inline void static update_cpu_instruction(_gui_context::_cpu* ctx, cpu* cpu) {
+inline void static update_cpu_instruction(ui_gui_context::ui_cpu* ctx, cpu* cpu) {
 	if (ctx->instruction_view) {
 		ctx->opcode.instr = &INSTRUCTIONS[cpu->get_opcode()];
 		usize len = ADDRESSING_MODES[ctx->opcode.instr->mode].length;
@@ -234,7 +232,7 @@ inline void static update_cpu_instruction(_gui_context::_cpu* ctx, cpu* cpu) {
 		if (len > 2) ctx->opcode.operands[1] = cpu->read_u8(cpu->get_pc() + 2);
 	}
 }
-inline void static update_cpu_context(_gui_context::_cpu* ctx, cpu* cpu) {
+inline void static update_cpu_context(ui_gui_context::ui_cpu* ctx, cpu* cpu) {
 	update_cpu_registers(ctx, cpu);
 	update_cpu_instruction(ctx, cpu);
 }
@@ -249,7 +247,7 @@ bool InputHex(const char* label, u32* value, int step = 1, int step_fast = 16, i
 
 int main(int argc, char* argv[]) {
 
-	_gui_context* ctx = new _gui_context();
+	ui_gui_context* ctx = new ui_gui_context();
 
 	// SDL Context
 #ifdef _WIN32
@@ -314,29 +312,18 @@ int main(int argc, char* argv[]) {
 	ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
 	ImGui_ImplOpenGL3_Init(glsl_version);
 
-	bool show_demo_window = true;
-	bool done = false;
-
-	std::vector<u32> pixel_buffer = std::vector<u32>(256 * 240);
-	for (auto& x : pixel_buffer) x = 0xFF000000;
-
+	std::vector<u32> pixel_buffer1 = std::vector<u32>(256 * 240);
+	std::vector<u32> pixel_buffer2 = std::vector<u32>(256 * 240);
+	for (auto& x : pixel_buffer1) x = 0xFF000000;
+	for (auto& x : pixel_buffer2) x = 0xFF000000;
 
 	GLuint canvas_texture;
 	glGenTextures(1, &canvas_texture);
 	glBindTexture(GL_TEXTURE_2D, canvas_texture);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 240, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixel_buffer.data());
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 240, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixel_buffer1.data());
 	glBindTexture(GL_TEXTURE_2D, 0);
-
-
-	ctx->screen.canvas = canvas_texture;
-	ctx->screen.pixel_buffer = std::span<u32>(pixel_buffer);
-
-	u8* ptr_u8 = reinterpret_cast<u8*>(ctx->screen.pixel_buffer.data());
-	usize size = ctx->screen.pixel_buffer.size_bytes();
-
-	ctx->screen.raw_buffer_bytes.view = std::span<u8>(ptr_u8, size);
 
 	bus* BUS = new bus();
 	cpu* CPU = new cpu();
@@ -344,27 +331,27 @@ int main(int argc, char* argv[]) {
 
 	CPU->connect(BUS);
 	PPU->connect(BUS);
-	PPU->set_pixel_buffer(pixel_buffer);
+	PPU->set_pixel_buffers(pixel_buffer1, pixel_buffer2);
 	BUS->connect(CPU);
 	BUS->connect(PPU);
 
-	ctx->cpu.wram.view = CPU->get_wram();
-	update_cpu_registers(&ctx->cpu, CPU);
+	ctx->m_cpu.wram.view = CPU->get_wram();
+	update_cpu_registers(&ctx->m_cpu, CPU);
 
-	ctx->ppu.color_palette = PPU->get_color_palette();
-	ctx->ppu.vram.view = PPU->get_vram();
-	ctx->ppu.oam_memory = PPU->get_oam_memory();
+	ctx->m_ppu.color_palette = PPU->get_color_palette();
+	ctx->m_ppu.vram.view = PPU->get_vram();
+	ctx->m_ppu.oam_memory = PPU->get_oam_memory();
 
+	ctx->m_screen.canvas = canvas_texture;
+	ctx->m_screen.ppu = PPU;
 
-	auto ppu_ctx = &(ctx->ppu);
+	auto ppu_ctx = &(ctx->m_ppu);
 
 	auto ppu_debug = [ppu_ctx](ppu& _ppu) {
 		update_ppu_context(ppu_ctx, &_ppu);
 	};
 
-	log_file = std::ofstream("log.txt");
-	log_file << std::hex;
-
+	bool done = false;
 	while (!done) {
 
 		SDL_Event event;
@@ -375,16 +362,9 @@ int main(int argc, char* argv[]) {
 				case SDLK_ESCAPE:
 					done = true;
 					break;
-
-				case SDLK_r:
-					show_demo_window = false;
-					break;
-				case SDLK_l:
-					show_demo_window = true;
-					break;
 				}
 			}
-			if ((event.type == SDL_QUIT)
+			else if ((event.type == SDL_QUIT)
 				|| (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window))) done = true;
 		}
 		if (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) { SDL_Delay(10); continue; }
@@ -394,74 +374,69 @@ int main(int argc, char* argv[]) {
 		ImGui::NewFrame();
 
 		/* * * * * * * * * * * Main Window * * * * * * * * * * */
+		
+		if (ImGui::BeginMainMenuBar()) {
 
-		if (show_demo_window) {
-			ImGui::ShowDemoWindow(& show_demo_window);
-		}
-		else {
-			if (ImGui::BeginMainMenuBar()) {
-
-				if (ImGui::BeginMenu("CPU")) {
-					if (ImGui::MenuItem(ctx->cpu.hide ? "Show" : "Hide")) {
-						ctx->cpu.hide = !ctx->cpu.hide;
-						ctx->cpu.register_view &= !(ctx->cpu.hide);
-						ctx->cpu.instruction_view &= !(ctx->cpu.hide);
-						ctx->cpu.wram.show &= !(ctx->cpu.hide);
-					}
-					ImGui::Separator();
-					ImGui::MenuItem("Registers view", nullptr, &ctx->cpu.register_view, !ctx->cpu.hide);
-					ImGui::MenuItem("Instruction view", nullptr, &ctx->cpu.instruction_view, !ctx->cpu.hide);
-					ImGui::Separator();
-					ImGui::MenuItem("RAM view", nullptr, &ctx->cpu.wram.show, !ctx->cpu.hide);
-					ImGui::MenuItem("Bus View", nullptr, &ctx->cpu.bus.show, !ctx->cpu.hide);
-					ImGui::EndMenu();
+			if (ImGui::BeginMenu("CPU")) {
+				if (ImGui::MenuItem(ctx->m_cpu.hide ? "Show" : "Hide")) {
+					ctx->m_cpu.hide = !ctx->m_cpu.hide;
+					ctx->m_cpu.register_view &= !(ctx->m_cpu.hide);
+					ctx->m_cpu.instruction_view &= !(ctx->m_cpu.hide);
+					ctx->m_cpu.wram.show &= !(ctx->m_cpu.hide);
 				}
-
-				if (ImGui::BeginMenu("ROM")) {
-					if (ImGui::MenuItem(ctx->rom.hide ? "Show" : "Hide")) {
-						ctx->rom.hide = !ctx->rom.hide;
-					}
-					ImGui::EndMenu();
-				}
-
-				if (ImGui::BeginMenu("PPU")) {
-					if (ImGui::MenuItem(ctx->ppu.hide ? "Show" : "Hide")) {
-						if (ctx->ppu.hide) {
-							ctx->ppu.hide = false;
-							PPU->set_tick_callback(ppu_debug);
-						}
-						else {
-							ctx->ppu.hide = true;
-							PPU->set_tick_callback(nullptr);
-						}
-						ctx->ppu.register_view &= !(ctx->ppu.hide);
-						ctx->ppu.vram.show &= !(ctx->ppu.hide);
-					}
-					ImGui::Separator();
-					ImGui::MenuItem("Registers view", nullptr, &ctx->ppu.register_view, !ctx->ppu.hide);
-					ImGui::Separator();
-					ImGui::MenuItem("VRAM view", nullptr, &ctx->ppu.vram.show, !ctx->ppu.hide);
-					ImGui::EndMenu();
-				}
-
-				if (ImGui::BeginMenu("Screen")) {
-					if (ImGui::MenuItem(ctx->screen.hide ? " Show" : "Hide")) {
-						ctx->screen.hide = !ctx->screen.hide;
-						ctx->screen.raw &= !(ctx->screen.hide);
-					}
-					ImGui::Separator();
-					ImGui::MenuItem("Raw bytes", nullptr, &ctx->screen.raw, !ctx->screen.hide);
-					ImGui::EndMenu();
-				}
-
-				ImGui::EndMainMenuBar();
+				ImGui::Separator();
+				ImGui::MenuItem("Registers view", nullptr, &ctx->m_cpu.register_view, !ctx->m_cpu.hide);
+				ImGui::MenuItem("Instruction view", nullptr, &ctx->m_cpu.instruction_view, !ctx->m_cpu.hide);
+				ImGui::Separator();
+				ImGui::MenuItem("RAM view", nullptr, &ctx->m_cpu.wram.show, !ctx->m_cpu.hide);
+				ImGui::MenuItem("Bus View", nullptr, &ctx->m_cpu.bus.show, !ctx->m_cpu.hide);
+				ImGui::EndMenu();
 			}
 
-			if (!ctx->cpu.hide) { cpu_window(&(ctx->cpu), CPU); }
-			if (!ctx->rom.hide) { rom_window(&(ctx->rom), CPU); }
-			if (!ctx->ppu.hide) { ppu_window(&(ctx->ppu), PPU); }
-			if (!ctx->screen.hide) { screen_window(&(ctx->screen)); }
+			if (ImGui::BeginMenu("ROM")) {
+				if (ImGui::MenuItem(ctx->m_rom.hide ? "Show" : "Hide")) {
+					ctx->m_rom.hide = !ctx->m_rom.hide;
+				}
+				ImGui::EndMenu();
+			}
+
+			if (ImGui::BeginMenu("PPU")) {
+				if (ImGui::MenuItem(ctx->m_ppu.hide ? "Show" : "Hide")) {
+					if (ctx->m_ppu.hide) {
+						ctx->m_ppu.hide = false;
+						PPU->set_tick_callback(ppu_debug);
+					}
+					else {
+						ctx->m_ppu.hide = true;
+						PPU->set_tick_callback(nullptr);
+					}
+					ctx->m_ppu.register_view &= !(ctx->m_ppu.hide);
+					ctx->m_ppu.vram.show &= !(ctx->m_ppu.hide);
+				}
+				ImGui::Separator();
+				ImGui::MenuItem("Registers view", nullptr, &ctx->m_ppu.register_view, !ctx->m_ppu.hide);
+				ImGui::Separator();
+				ImGui::MenuItem("VRAM view", nullptr, &ctx->m_ppu.vram.show, !ctx->m_ppu.hide);
+				ImGui::EndMenu();
+			}
+
+			if (ImGui::BeginMenu("Screen")) {
+				if (ImGui::MenuItem(ctx->m_screen.hide ? " Show" : "Hide")) {
+					ctx->m_screen.hide = !ctx->m_screen.hide;
+					ctx->m_screen.raw &= !(ctx->m_screen.hide);
+				}
+				ImGui::Separator();
+				ImGui::MenuItem("Raw bytes", nullptr, &ctx->m_screen.raw, !ctx->m_screen.hide);
+				ImGui::EndMenu();
+			}
+
+			ImGui::EndMainMenuBar();
 		}
+
+		if (!ctx->m_cpu.hide) { cpu_window(&(ctx->m_cpu), CPU); }
+		if (!ctx->m_rom.hide) { rom_window(&(ctx->m_rom), CPU); }
+		if (!ctx->m_ppu.hide) { ppu_window(&(ctx->m_ppu), PPU); }
+		if (!ctx->m_screen.hide) { screen_window(&(ctx->m_screen)); }
 
 		/* * * * * * * * * * Main Window End * * * * * * * * * */
 
@@ -474,8 +449,8 @@ int main(int argc, char* argv[]) {
 	}
 
 	// Cleanup
-	if (ctx->rom.game_opened != nullptr) { delete ctx->rom.game_opened; }
-	if (ctx->rom.game_loaded != nullptr) { delete ctx->rom.game_loaded; }
+	if (ctx->m_rom.game_opened != nullptr) { delete ctx->m_rom.game_opened; }
+	if (ctx->m_rom.game_loaded != nullptr) { delete ctx->m_rom.game_loaded; }
 	delete ctx;
 	delete PPU;
 	delete CPU;
@@ -491,7 +466,7 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 
-void ppu_window(_gui_context::_ppu* ctx, ppu* PPU) {
+void ppu_window(ui_gui_context::ui_ppu* ctx, ppu* PPU) {
 
 	ImGui::SetNextWindowSizeConstraints(ImVec2(440.f, 90.f), ImVec2(920.f, 700.f));
 	if (!ImGui::Begin("PPU", nullptr, ImGuiWindowFlags_HorizontalScrollbar)) {
@@ -645,7 +620,7 @@ void ppu_window(_gui_context::_ppu* ctx, ppu* PPU) {
 	ImGui::End();
 }
 
-void rom_window(_gui_context::_rom* ctx, cpu* cpu) {
+void rom_window(ui_gui_context::ui_rom* ctx, cpu* cpu) {
 
 	ImGui::SetNextWindowSize(
 		ImVec2{ (ctx->show_chr || ctx->show_prg) ? 860.f : 300.f, 275.f}
@@ -789,7 +764,7 @@ void rom_window(_gui_context::_rom* ctx, cpu* cpu) {
 	ImGui::End();
 }
 
-void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
+void cpu_window(ui_gui_context::ui_cpu* ctx, cpu* CPU) {
 
 	float height = 100.f + (ctx->register_view ? 110.f : 0.f) + (ctx->instruction_view ? 90.f : 0.f) + (ctx->stack_view ? 30.f : 0.f);
 	ImGui::SetNextWindowSize(ImVec2(435.f, height));
@@ -826,9 +801,7 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 			else {
 				if (ImGui::Button("Start")) {
 					CPU->run_async(
-						[](cpu& cpu) {
-							log_file << "PC: " << static_cast<int>(cpu.get_pc()) << ", OpCode: " << static_cast<int>(cpu.get_opcode()) << ", Instruction: " << INSTRUCTIONS[cpu.get_opcode()].mnemonic << std::endl;
-						},
+						[](cpu&) { },
 						[ctx](cpu& cpu) {
 							update_cpu_context(ctx, &cpu);
 						}
@@ -1024,7 +997,7 @@ void cpu_window(_gui_context::_cpu* ctx, cpu* CPU) {
 	ImGui::End();
 }
 
-void screen_window(_gui_context::_screen* ctx) {
+void screen_window(ui_gui_context::ui_screen* ctx) {
 
 	ImGui::SetNextWindowSize(ImVec2(270.f, 275.f));
 	if (!ImGui::Begin("Screen")) {
@@ -1033,38 +1006,43 @@ void screen_window(_gui_context::_screen* ctx) {
 	}
 	ImVec2 display_size(256.f * 1.f, 240.f * 1.f);
 
-	glBindTexture(GL_TEXTURE_2D, ctx->canvas);
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 240, GL_RGBA, GL_UNSIGNED_BYTE, ctx->pixel_buffer.data());
-	glBindTexture(GL_TEXTURE_2D, 0);
+	if (ctx->ppu->is_frame_ready()) {
+		std::span<u32> pixel_buffer = ctx->ppu->get_last_screen();
+		ctx->ppu->reset_frame_ready();
+		glBindTexture(GL_TEXTURE_2D, ctx->canvas);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 240, GL_RGBA, GL_UNSIGNED_BYTE, pixel_buffer.data());
+		glBindTexture(GL_TEXTURE_2D, 0);
+	}
+
 
 	ImGui::Image(
 		(ImTextureID)(intptr_t)(ctx->canvas),
 		display_size
 	);
 
-	if (ctx->raw) {
-		if (!memory_viewer("Screen Pixel Buffer", 2, &ctx->raw_buffer_bytes.start, &ctx->raw_buffer_bytes.end, &ctx->raw_buffer_bytes.look_for, ctx->raw_buffer_bytes.max, ctx->raw_buffer_bytes.view, 15)) {
-			ImGui::End();
-			return;
-		}
-	}
+	//if (ctx->raw) {
+	//	if (!memory_viewer("Screen Pixel Buffer", 2, &ctx->raw_buffer_bytes.start, &ctx->raw_buffer_bytes.end, &ctx->raw_buffer_bytes.look_for, ctx->raw_buffer_bytes.max, ctx->raw_buffer_bytes.view, 15)) {
+	//		ImGui::End();
+	//		return;
+	//	}
+	//}
 
 	ImGui::End();
 }
 
-inline void static gui_fetch(_gui_context::_cpu* ctx, cpu* CPU) {
+inline void static gui_fetch(ui_gui_context::ui_cpu* ctx, cpu* CPU) {
 	CPU->fetch();
 	ctx->opcode.fetched = true;
 	ctx->opcode.executed = false;
 
 	update_cpu_registers(ctx, CPU);
 }
-inline void static gui_decode(_gui_context::_cpu* ctx, cpu* CPU) {
+inline void static gui_decode(ui_gui_context::ui_cpu* ctx, cpu* CPU) {
 	CPU->decode();
 
 	update_cpu_instruction(ctx, CPU);
 }
-inline void static gui_execute(_gui_context::_cpu* ctx, cpu* CPU) {
+inline void static gui_execute(ui_gui_context::ui_cpu* ctx, cpu* CPU) {
 	CPU->execute();
 	ctx->opcode.fetched = false;
 	ctx->opcode.executed = true;

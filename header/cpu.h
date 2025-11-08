@@ -276,6 +276,13 @@ public:
 
 		runner = std::jthread([this, first, last](std::stop_token st) {
 
+			using clock = std::chrono::steady_clock;
+
+			double framerate_target = 60.0988;
+			auto start = clock::now();
+			double accumulator = 0.0;
+			double threshold = 1.0 / framerate_target;
+
 			while (!st.stop_requested()) {
 				{
 					std::unique_lock<std::mutex> lock(mtx);
@@ -287,15 +294,23 @@ public:
 				}
 				if (st.stop_requested()) break;
 				
-				first(*this);
-				if (this->nmi_requested.load()) this->handle_nmi();
-				this->fetch();
-				this->decode();
-				this->execute();
-				last(*this);
+				auto now = clock::now();
+				std::chrono::duration<double> delta = now - start;
+				start = now;
+				accumulator += delta.count();
+
+				//while (accumulator >= threshold) {
+					first(*this);
+					if (this->nmi_requested.load()) this->handle_nmi();
+					this->fetch();
+					this->decode();
+					this->execute();
+					last(*this);
+
+					accumulator -= threshold;
+				//}
 
 				if (halted.load()) break;
-				//std::this_thread::sleep_for(std::chrono::milliseconds(2));
 			}
 		});
 	}
